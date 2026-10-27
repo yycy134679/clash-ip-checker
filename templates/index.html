@@ -7,7 +7,7 @@
     <title>Clash 节点检测器</title>
     <link rel="icon" href="data:,">
     <link rel="stylesheet" href="https://unpkg.com/@picocss/pico@latest/css/pico.min.css">
-    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="stylesheet" href="/static/css/style.css?v=2">
     <!-- CodeMirror for YAML syntax highlighting -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css">
     <link rel="stylesheet"
@@ -20,21 +20,23 @@
 <body>
     <main class="container" x-data="app()" x-init="init()">
         <!-- Header -->
-        <header style="padding-bottom: 0; margin-bottom: 1rem;">
-            <h1 style="margin-bottom: 0.2rem; font-size: 2rem;">
-                ⚡ <span style="color: #10b981;">Clash</span> IP Checker
-            </h1>
-            <p style="font-size: 0.85rem; margin-bottom: 0.5rem; opacity: 0.7;">
-                粘贴 YAML 订阅 → 检测 IP 质量 → 编辑节点 → 导出
-            </p>
+        <header class="app-header">
+            <div class="brand-mark" aria-hidden="true">C<span>↗</span></div>
+            <div>
+                <h1>Clash IP Checker</h1>
+                <p>检测节点 IP 质量，整理并导出订阅</p>
+            </div>
         </header>
 
         <!-- Input Section (6:4 ratio) -->
         <div class="grid input-grid">
             <!-- YAML Input (60%) -->
             <div class="yaml-column">
-                <label>粘贴 YAML 订阅内容</label>
-                <div id="yaml-editor" class="yaml-editor"></div>
+                <div class="editor-heading">
+                    <div><h2>订阅内容</h2><p>粘贴 Clash YAML 配置，开始检测节点</p></div>
+                    <span class="format-tag">YAML</span>
+                </div>
+                <div id="yaml-editor" class="yaml-editor" aria-label="YAML 订阅内容"></div>
             </div>
 
             <!-- Config Panel -->
@@ -198,8 +200,9 @@
                                 <td :title="sourceError(node, 'ping0')">
                                     <span :class="sourceRiskClass(node, 'ping0')"
                                         x-text="sourceScore(node, 'ping0')"></span>
-                                    <small class="source-error" x-show="sourceErrorDetail(node, 'ping0')"
-                                        x-text="sourceErrorDetail(node, 'ping0')"></small>
+                                    <button type="button" class="source-error" x-show="sourceErrorDetail(node, 'ping0')"
+                                        @click="errorDetail = sourceErrorDetail(node, 'ping0'); $refs.errorModal.showModal()"
+                                        aria-label="查看 Ping0 完整错误信息" x-text="sourceErrorDetail(node, 'ping0')"></button>
                                 </td>
                                 <td :title="sourceError(node, 'ping0')">
                                     <span :class="sourceSharedClass(node)"
@@ -208,8 +211,9 @@
                                 <td :title="sourceError(node, 'ippure')">
                                     <span :class="sourceRiskClass(node, 'ippure')"
                                         x-text="sourceScore(node, 'ippure')"></span>
-                                    <small class="source-error" x-show="sourceErrorDetail(node, 'ippure')"
-                                        x-text="sourceErrorDetail(node, 'ippure')"></small>
+                                    <button type="button" class="source-error" x-show="sourceErrorDetail(node, 'ippure')"
+                                        @click="errorDetail = sourceErrorDetail(node, 'ippure'); $refs.errorModal.showModal()"
+                                        aria-label="查看 IPPure 完整错误信息" x-text="sourceErrorDetail(node, 'ippure')"></button>
                                 </td>
                                 <td :title="sourceError(node, 'ippure')">
                                     <span :class="sourceBotClass(node)"
@@ -233,15 +237,15 @@
                                         title="两家检测源看到的出口 IP 不同">Ping0 与 IPPure 不同</small>
                                 </td>
                                 <td class="actions-cell">
-                                    <button class="small outline" @click="startEdit(node)"
+                                    <button class="small outline" aria-label="编辑节点名称" title="编辑节点名称" @click="startEdit(node)"
                                         :disabled="isRunning || isRechecking">✏️</button>
-                                    <button class="small outline secondary" @click="recheckNode(node)"
+                                    <button class="small outline secondary" aria-label="重新检测此节点" @click="recheckNode(node)"
                                         :disabled="isRunning || isRechecking" title="重新检测此节点">
                                         <span x-show="recheckingId !== node.id">🔄</span>
                                         <span x-show="recheckingId === node.id"
                                             style="opacity:0.5">⏳</span>
                                     </button>
-                                    <button class="small outline danger" @click="deleteNode(node)"
+                                    <button class="small outline danger" aria-label="删除节点" title="删除节点" @click="deleteNode(node)"
                                         :disabled="isRunning || isRechecking">🗑️</button>
                                 </td>
                             </tr>
@@ -250,6 +254,17 @@
                 </table>
             </div>
         </section>
+
+        <dialog x-ref="errorModal" aria-labelledby="error-detail-title">
+            <article class="error-dialog">
+                <header>
+                    <button aria-label="关闭" class="close" @click="$refs.errorModal.close()"></button>
+                    <h3 id="error-detail-title">检测失败详情</h3>
+                </header>
+                <p x-text="errorDetail"></p>
+                <footer><button class="secondary" @click="$refs.errorModal.close()">关闭</button></footer>
+            </article>
+        </dialog>
 
         <!-- Export Modal -->
         <dialog x-ref="exportModal">
@@ -271,7 +286,7 @@
         </dialog>
     </main>
 
-    <script src="/static/js/app.js"></script>
+    <script src="/static/js/app.js?v=2"></script>
 </body>
 
 </html>

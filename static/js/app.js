@@ -29,6 +29,7 @@ function app() {
         nodes: [],
         selected: [],
         error: '',
+        errorDetail: '',
 
         // Edit state
         editingId: null,

@@ -251,13 +251,33 @@ table {
 
 .source-error {
     display: block;
-    max-width: 150px;
-    margin-top: 2px;
+    width: 100%;
+    max-width: 120px;
+    margin: 2px 0 0;
+    padding: 0;
+    overflow: hidden;
+    border: 0;
+    background: transparent;
     color: #f87171;
-    font-size: 0.68rem;
-    line-height: 1.25;
-    white-space: normal;
+    font-size: 0.75rem;
+    font-weight: normal;
+    line-height: 1.4;
+    text-align: left;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.source-error:hover {
+    background: transparent;
+    color: #ffaaaa;
+    text-decoration: underline;
+}
+
+.error-dialog p {
+    white-space: pre-wrap;
     overflow-wrap: anywhere;
+    max-height: 50vh;
+    overflow-y: auto;
 }
 
 .table-scroll-hint {
@@ -529,4 +549,118 @@ td:last-child {
 
 ::-webkit-scrollbar-thumb:hover {
     background: var(--text-muted);
+}
+
+/* 工作台：让订阅编辑、检测设置和结果各有清晰的层级。 */
+:root {
+    --primary: #75b7f0;
+    --primary-focus: rgba(117, 183, 240, 0.3);
+    --background-dark: #101a25;
+    --surface-glass: #1c2a38;
+    --border-color: #405263;
+    --text-main: #edf4f8;
+    --text-muted: #b1c1cd;
+    --color: var(--text-main);
+    --muted-color: var(--text-muted);
+}
+
+body {
+    background: #101a25;
+    font-family: "Avenir Next", "PingFang SC", "Microsoft YaHei", sans-serif;
+    color: var(--text-main);
+}
+
+.container { max-width: 1440px; padding-inline: 1rem; }
+.app-header {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 2.25rem 0 1.8rem;
+    margin: 0;
+    text-align: left;
+}
+.app-header h1 { margin: 0; font-size: clamp(1.5rem, 3vw, 2rem); letter-spacing: -0.035em; }
+.app-header p { margin: 0.2rem 0 0; color: var(--text-muted); font-size: 0.9rem; }
+.brand-mark {
+    display: grid;
+    place-items: center;
+    position: relative;
+    flex: 0 0 48px;
+    height: 48px;
+    border-radius: 14px;
+    background: #75b7f0;
+    color: #102437;
+    font-size: 1.45rem;
+    font-weight: 800;
+}
+.brand-mark span { position: absolute; right: 7px; top: 4px; font-size: 0.75rem; }
+.input-grid { grid-template-columns: minmax(0, 1.4fr) minmax(320px, 1fr); gap: 1.25rem; }
+.yaml-column, .config-panel, .progress-section, .results-section {
+    background: var(--surface-glass);
+    border: 1px solid #344858;
+    border-radius: 14px;
+    box-shadow: none;
+    backdrop-filter: none;
+    padding: 1.5rem;
+}
+.yaml-column { height: 630px !important; }
+.editor-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; margin-bottom: 1.1rem; }
+.editor-heading h2 { margin: 0; font-size: 1.15rem; }
+.editor-heading p { margin: 0.35rem 0 0; color: var(--text-muted); font-size: 0.85rem; }
+.format-tag { padding: 0.25rem 0.55rem; border: 1px solid #52697b; border-radius: 5px; color: #c1d7e6; font-size: 0.7rem; font-weight: 700; }
+.yaml-editor, #export-editor { background: #111d28; border-color: #405263; border-radius: 8px; }
+.yaml-column .yaml-editor { min-height: 0; }
+.CodeMirror { font-size: 14px !important; line-height: 1.65; }
+.config-panel { max-height: none; overflow: visible; }
+.config-panel legend { font-size: 1.15rem; font-weight: 700; margin-bottom: 1rem; }
+.config-panel label { color: #e0ebf2; }
+.config-panel small { color: var(--text-muted); line-height: 1.5; }
+input[type="text"], input[type="password"], select {
+    background-color: #14212d !important;
+    border-color: #465b6c !important;
+    color: var(--text-main) !important;
+}
+input:focus, select:focus { border-color: var(--primary) !important; box-shadow: 0 0 0 3px var(--primary-focus) !important; }
+button { background: #75b7f0; color: #102437; box-shadow: none; letter-spacing: 0; transition: background-color 0.15s ease; }
+button:hover { background: #a2d3fa; transform: none; box-shadow: none; }
+button.secondary { background: #344858; border-color: #52697b; color: #edf4f8; }
+button.secondary:hover { background: #465e71; }
+button.outline { background: transparent; color: #c4d5e0; }
+button.outline:hover { color: #fff; border-color: #75b7f0; }
+button:focus-visible, summary:focus-visible, .editable:focus-visible { outline: 3px solid #a2d3fa; outline-offset: 3px; }
+.button-group { display: flex; gap: 0.75rem; }
+.button-group button { margin-bottom: 0; }
+.config-details { background: #172430; padding: 0.75rem 1rem; margin-bottom: 1rem; }
+.config-details summary { color: #d4e3ed; }
+.results-section { height: auto; margin-top: 1.25rem; }
+.results-header h3 { font-size: 1.15rem; }
+.results-actions button { margin: 0; }
+.table-scroll table { font-size: 0.85rem; border-spacing: 0; }
+.table-scroll th { color: #b8cad6; font-size: 0.78rem; letter-spacing: 0; text-transform: none; }
+.table-scroll td { padding: 0.7rem 0.5rem; border-bottom: 1px solid #344858; }
+.table-scroll tbody tr { background: transparent; }
+.table-scroll tbody tr:hover { background: #263b4c; transform: none; }
+.table-scroll tbody tr.partial, .table-scroll tbody tr.ip-mismatch-row { background: rgba(251, 191, 36, 0.08); }
+.source-error, .mismatch-hint { font-size: 0.75rem; }
+.source-tag { font-size: 0.7rem; }
+progress::-webkit-progress-value { background: #75b7f0; box-shadow: none; }
+progress::-moz-progress-bar { background: #75b7f0; }
+dialog article { background: #1c2a38; border: 1px solid #405263; }
+dialog article > header { padding: 1rem 1.5rem; text-align: left; }
+dialog article > footer { padding: 1rem 1.5rem; }
+#export-editor .CodeMirror { font-size: 13px !important; }
+
+@media (max-width: 1024px) {
+    .input-grid { grid-template-columns: 1fr; }
+    .yaml-column { height: 460px !important; }
+}
+@media (max-width: 600px) {
+    .app-header { padding: 1.5rem 0; }
+    .yaml-column, .config-panel, .results-section { padding: 1rem; }
+    .yaml-column { height: 380px !important; }
+    dialog article > footer > div { flex-wrap: wrap; }
+    dialog article > footer button { flex: 1 1 auto; }
+}
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; }
 }
