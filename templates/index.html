@@ -5,6 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Clash 节点检测器</title>
+    <link rel="icon" href="data:,">
     <link rel="stylesheet" href="https://unpkg.com/@picocss/pico@latest/css/pico.min.css">
     <link rel="stylesheet" href="/static/css/style.css">
     <!-- CodeMirror for YAML syntax highlighting -->
@@ -44,25 +45,28 @@
                     <fieldset>
                         <legend>核心配置</legend>
                         <label style="margin-bottom: 0.5rem;">
-                            <input type="checkbox" x-model="config.fast_mode">
-                            极速模式 (使用API接口，无Bot占比)
+                            <input type="checkbox" x-model="config.fast_mode"
+                                :disabled="isRunning || isRechecking">
+                            极速模式 (使用 API 接口，无 Bot 比例)
                         </label>
 
-                        <!-- Fast Mode Sub-options -->
-                        <div x-show="config.fast_mode" x-transition
-                            style="margin-bottom: 1.5rem; padding-left: 1.5rem; border-left: 2px solid rgba(255,255,255,0.1);">
-                            <label style="margin-bottom: 0.5rem; font-size: 0.9em;">
-                                优先数据源
-                                <select x-model="config.source" style="margin-top: 0.2rem; padding: 0.4rem;">
-                                    <option value="ping0">Ping0 (有共享人数，不稳定建议勾选降级)</option>
-                                    <option value="ippure">IPPure (无共享人数，稳定)</option>
-                                </select>
-                            </label>
-                            <label style="font-size: 0.9em;">
-                                <input type="checkbox" x-model="config.fallback">
-                                数据源降级 (优选失败时尝试备用)
-                            </label>
-                        </div>
+                        <label style="font-size: 0.9em; margin-bottom: 0.4rem;">
+                            检测源
+                            <select x-model="config.source" :disabled="isRunning || isRechecking"
+                                style="margin-top: 0.2rem; padding: 0.4rem;">
+                                <option value="both">双源检测（推荐）</option>
+                                <option value="ping0">Ping0 优先</option>
+                                <option value="ippure">IPPure 优先</option>
+                            </select>
+                        </label>
+                        <small x-show="config.source === 'both'" style="display: block; margin-bottom: 0.75rem;">
+                            同时显示两家的评分和 IP 属性；一家失败不影响另一家，不计算总分。
+                        </small>
+                        <label x-show="config.source !== 'both'" style="font-size: 0.9em; margin-bottom: 0.75rem;">
+                            <input type="checkbox" x-model="config.fallback"
+                                :disabled="isRunning || isRechecking">
+                            数据源降级 (主源失败时尝试另一家)
+                        </label>
                         <label>
                             Clash API 地址 （Clash-设置-外部控制查看）
                             <input type="text" x-model="config.clash_api_url" placeholder="http://127.0.0.1:9097">
@@ -105,12 +109,12 @@
 
 
                     <div class="button-group">
-                        <button @click="startCheck" :disabled="isRunning || !yamlContent.trim()" :aria-busy="isRunning">
+                        <button @click="startCheck" :disabled="isRunning || isRechecking || !yamlContent.trim()" :aria-busy="isRunning">
                             <span x-show="!isRunning">🚀 开始检测</span>
                             <span x-show="isRunning">检测中...</span>
                         </button>
-                        <button @click="stopCheck" x-show="isRunning" class="secondary">
-                            ⏹ 停止
+                        <button @click="stopCheck" x-show="isRunning" :disabled="isStopping" class="secondary">
+                            <span x-text="isStopping ? '正在恢复...' : '⏹ 停止'"></span>
                         </button>
                     </div>
                     <small x-show="error" x-text="error" class="error-text"
@@ -146,57 +150,105 @@
                 </div>
             </div>
 
-            <table role="grid">
-                <thead>
-                    <tr>
-                        <th><input type="checkbox" @change="toggleAll" :checked="selected.length === nodes.length"></th>
-                        <th>节点名</th>
-                        <th>IP</th>
-                        <th>风控</th>
-                        <th x-show="config.fast_mode">共享</th>
-                        <th x-show="!config.fast_mode">Bot</th>
-                        <th>类型</th>
-                        <th>数据源</th>
-                        <th>操作</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <template x-for="node in nodes" :key="node.id">
-                        <tr :class="{'degraded': node.source !== 'ping0'}">
-                            <td>
-                                <input type="checkbox" :value="node.id" x-model="selected">
-                            </td>
-                            <td>
-                                <span x-show="editingId !== node.id" x-text="node.name" @dblclick="startEdit(node)"
-                                    class="editable"></span>
-                                <input x-show="editingId === node.id" x-model="editValue" @blur="saveEdit(node)"
-                                    @keyup.enter="saveEdit(node)" @keyup.escape="cancelEdit" class="inline-edit">
-                            </td>
-                            <td x-text="node.ip"></td>
-                            <td><span :class="getRiskClass(node.risk)" x-text="node.risk"></span></td>
-                            <td x-show="config.fast_mode"><span :class="getSharedClass(node.shared)"
-                                    x-text="node.shared || 'N/A'"></span></td>
-                            <td x-show="!config.fast_mode"><span :class="getRiskClass(node.bot)"
-                                    x-text="node.bot || 'N/A'"></span></td>
-                            <td x-text="`${node.type}|${node.native}`"></td>
-                            <td>
-                                <span
-                                    :class="{'source-ping0': node.source === 'ping0', 'source-ippure': node.source === 'ippure'}"
-                                    x-text="node.source"></span>
-                            </td>
-                            <td>
-                                <button class="small outline" @click="startEdit(node)">✏️</button>
-                                <button class="small outline secondary" @click="recheckNode(node)"
-                                    :disabled="isRunning || isRechecking" title="重新检测此节点">
-                                    <span x-show="!isRechecking || editingId === node.id">🔄</span>
-                                    <span x-show="isRechecking && editingId !== node.id" style="opacity:0.5">⏳</span>
-                                </button>
-                                <button class="small outline danger" @click="deleteNode(node)">🗑️</button>
-                            </td>
+            <small class="table-scroll-hint">左右滑动查看完整结果</small>
+            <div class="table-scroll">
+                <table role="grid">
+                    <thead>
+                        <tr>
+                            <th><input type="checkbox" @change="toggleAll"
+                                    :checked="selected.length === nodes.length"></th>
+                            <th>节点名</th>
+                            <th>出口 IP</th>
+                            <th>Ping0 风控</th>
+                            <th>Ping0 共享</th>
+                            <th>IPPure 评分</th>
+                            <th>IPPure Bot</th>
+                            <th>IP 类型</th>
+                            <th>状态</th>
+                            <th>操作</th>
                         </tr>
-                    </template>
-                </tbody>
-            </table>
+                    </thead>
+                    <tbody>
+                        <template x-for="node in nodes" :key="node.id">
+                            <tr :class="{
+                                    'degraded': node.status === '⚠️ 降级',
+                                    'partial': node.check_status === 'partial',
+                                    'ip-mismatch-row': node.ip_mismatch
+                                }">
+                                <td>
+                                    <input type="checkbox" :value="node.id" x-model="selected">
+                                </td>
+                                <td class="node-cell">
+                                    <span x-show="editingId !== node.id" x-text="node.name"
+                                        @dblclick="startEdit(node)" class="editable"></span>
+                                    <input x-show="editingId === node.id" x-model="editValue"
+                                        @blur="saveEdit(node)" @keyup.enter="saveEdit(node)"
+                                        @keyup.escape="cancelEdit" class="inline-edit">
+                                </td>
+                                <td class="source-stack">
+                                    <div x-show="hasSource(node, 'ping0')" :title="sourceError(node, 'ping0')">
+                                        <span class="source-tag ping0">Ping0</span>
+                                        <span x-text="sourceIp(node, 'ping0')"></span>
+                                    </div>
+                                    <div x-show="hasSource(node, 'ippure')" :title="sourceError(node, 'ippure')">
+                                        <span class="source-tag ippure">IPPure</span>
+                                        <span x-text="sourceIp(node, 'ippure')"></span>
+                                    </div>
+                                </td>
+                                <td :title="sourceError(node, 'ping0')">
+                                    <span :class="sourceRiskClass(node, 'ping0')"
+                                        x-text="sourceScore(node, 'ping0')"></span>
+                                    <small class="source-error" x-show="sourceErrorDetail(node, 'ping0')"
+                                        x-text="sourceErrorDetail(node, 'ping0')"></small>
+                                </td>
+                                <td :title="sourceError(node, 'ping0')">
+                                    <span :class="sourceSharedClass(node)"
+                                        x-text="sourceShared(node)"></span>
+                                </td>
+                                <td :title="sourceError(node, 'ippure')">
+                                    <span :class="sourceRiskClass(node, 'ippure')"
+                                        x-text="sourceScore(node, 'ippure')"></span>
+                                    <small class="source-error" x-show="sourceErrorDetail(node, 'ippure')"
+                                        x-text="sourceErrorDetail(node, 'ippure')"></small>
+                                </td>
+                                <td :title="sourceError(node, 'ippure')">
+                                    <span :class="sourceBotClass(node)"
+                                        x-text="sourceBot(node)"></span>
+                                </td>
+                                <td class="source-stack">
+                                    <div x-show="hasSource(node, 'ping0')">
+                                        <span class="source-tag ping0">Ping0</span>
+                                        <span :class="sourceIdentityClass(node, 'ping0')"
+                                            x-text="sourceIdentity(node, 'ping0')"></span>
+                                    </div>
+                                    <div x-show="hasSource(node, 'ippure')">
+                                        <span class="source-tag ippure">IPPure</span>
+                                        <span :class="sourceIdentityClass(node, 'ippure')"
+                                            x-text="sourceIdentity(node, 'ippure')"></span>
+                                    </div>
+                                </td>
+                                <td :title="node.error || ''">
+                                    <span :class="nodeStatusClass(node)" x-text="nodeStatusText(node)"></span>
+                                    <small x-show="node.ip_mismatch" class="mismatch-hint"
+                                        title="两家检测源看到的出口 IP 不同">Ping0 与 IPPure 不同</small>
+                                </td>
+                                <td class="actions-cell">
+                                    <button class="small outline" @click="startEdit(node)"
+                                        :disabled="isRunning || isRechecking">✏️</button>
+                                    <button class="small outline secondary" @click="recheckNode(node)"
+                                        :disabled="isRunning || isRechecking" title="重新检测此节点">
+                                        <span x-show="recheckingId !== node.id">🔄</span>
+                                        <span x-show="recheckingId === node.id"
+                                            style="opacity:0.5">⏳</span>
+                                    </button>
+                                    <button class="small outline danger" @click="deleteNode(node)"
+                                        :disabled="isRunning || isRechecking">🗑️</button>
+                                </td>
+                            </tr>
+                        </template>
+                    </tbody>
+                </table>
+            </div>
         </section>
 
         <!-- Export Modal -->

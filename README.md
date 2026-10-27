@@ -9,7 +9,7 @@
 
 
 
-一个针对 **Clash** (及兼容核心) 的自动化节点工具。它会自动遍历你的代理节点，通过 [IPPure](https://ippure.com/)或者[Ping0](https://ping0.cc/) 检测 IP 纯净度和相关属性，并重命名节点，添加实用的指标（IP 纯净度、Bot 比例(或共享人数)、IP属性/IP来源状态）`【🟢🟡 住宅|原生】`。
+一个针对 **Clash** (及兼容核心) 的自动化节点工具。它会自动遍历代理节点，默认同时查询 [Ping0](https://ping0.cc/) 和 [IPPure](https://ippure.com/)，分别显示两家的评分、IP 类型和 IP 来源，再重命名节点。两家分数不平均，也不合成总分。
 效果展示：
 ![图片描述](assets/clash-node-checked.png)
 Web可视化配置检测：
@@ -25,18 +25,24 @@ Web可视化配置检测：
 - **导出增强**: 支持检测结果的实时预览、编辑和一键导出，一键导入Clash
 - **体验优化**: 自动清理 IP 缓存，防止结果残留；优化了端口检测和冲突处理。
 
+### v2.1.0 (2026-10-27)
+- **双源检测**: Web、命令行和 YAML 导出默认同时显示 Ping0 与 IPPure 结果。任一家失败或超时，另一家的结果仍会保留。
+- **结果隔离**: 两家分别显示评分、IP 类型、原生／广播标记和失败原因。两家出口 IP 不同会上报“出口 IP 不一致”。
+- **单源兼容**: 旧配置明确写 `source: ping0` 或 `source: ippure` 时，继续使用原来的主源和降级规则。
+
 
 ## ✨ 功能特点
 
 - **🖥️ Web 可视化界面 (新!)**: 提供现代化的 Web 界面，支持可视化配置，检测可查看实时进度显示、单点重测、结果编辑和导出预览，支持一键跳转导入Clash。
-- **极速模式**: 默认 **开启**，通过 IPPure API 或者 Ping0 直接检测，速度比浏览器模式更快！可在config.yaml中设置`fast_mode = False`关闭。
-- **极速模式多数据源支持**: 支持 `ping0` (默认) 和 `ippure` 两种检测源，支持自动降级 (Fallback) 机制，当 ping0 失败时自动切换到 ippure。**ippure缺少 Bot 比例分析，Ping0有共享人数数据**
+- **极速模式**: 默认 **开启**，通过 Ping0 和 IPPure API 直接检测，速度比浏览器模式更快。可在 `config.yaml` 中设置 `fast_mode: false` 关闭。
+- **双源检测（默认）**: 同时查询 Ping0 和 IPPure，分别显示 `Ping0 风控`、`IPPure 评分`。也可以切换到单一主源，继续使用自动降级 (Fallback)。
+- **数据归属清楚**: Ping0 提供共享人数，IPPure 浏览器模式提供 Bot 比例。任一 API 模式都不提供 Bot 比例；IPPure API 也不提供共享人数。
 - **自动切换**: 自动遍历并切换你的 Clash 代理节点。
-- **深度 IP 分析**: 检测 IP 纯净度分数、Bot 比例、IP 属性 (原生/机房) 以及归属地。
+- **深度 IP 分析**: 检测 IP 风险分、IP 类型 (住宅/机房)、IP 来源 (原生/广播) 和共享人数。浏览器模式还会显示 IPPure 的 Bot 比例。
 - **高拟真检测 (可选)**: 在浏览器模式下使用 **Playwright** 进行高拟真检测，包含 Bot 比例分析。支持无头模式 (Headless) 配置。
 - **智能过滤**: 自动跳过无效节点 (如 "到期", "流量重置", "官网" 等)。
 - **配置注入**: 生成一个新的 Clash 配置文件 (`_checked.yaml`)，在节点名称后追加 Emoji 和状态信息。
-- **强制全局模式**: 临时将 Clash 强制切换为全局模式以确保测试准确性。
+- **强制全局模式**: 检测前保存当前模式和节点，再切换为全局模式；完成、停止或发生异常后恢复原设置。
 
 ##  ⚡新增Docker部署 [详情见Docker分支](https://github.com/tombcato/clash-ip-checker/tree/docker)
 相对于主分支而言，Docker部署后代理切换不影响本地网络（部署NAS或者云服务器），且能直接输入订阅链接输出新订阅链接，没有繁琐的使用步骤，**一键替换订阅url检测！**
@@ -51,13 +57,15 @@ Web可视化配置检测：
 
 1.  **克隆仓库**
     ```bash
-    git clone git@github.com:tombcato/clash-ip-checker.git
+    git clone https://github.com/tombcato/clash-ip-checker.git
     cd clash-ip-checker
     ```
 
 2.  **安装依赖**
     ```bash
-    pip install -r requirements.txt
+    python3 -m venv .venv
+    source .venv/bin/activate
+    python -m pip install -r requirements.lock
     # 非极速模式需要
     playwright install chromium
     # 如果 install chromium 运行失败说明 playwright 没添加环境变量，可以用：
@@ -69,6 +77,7 @@ Web可视化配置检测：
     python web.py
     ```
     访问 http://127.0.0.1:8080 即可使用图形化界面进行配置和检测。
+    macOS 完成安装后也可双击 `start.command` 启动。
     
 4.  **命令行模式 (旧版)**
     - 修改 `config.yaml.example` 删除后缀重命名为 `config.yaml`。
@@ -76,8 +85,8 @@ Web可视化配置检测：
         - `yaml_path`: 你的 Clash 配置文件 (**.yaml**) 的绝对路径。
         - `clash_api_secret`: 你的 API 密钥 (如果有的话)。
         - `fast_mode`: ⚡ 是否使用极速模式 (True/False)。
-        - `source`: 检测源，可选 `ping0` 或 `ippure` (默认 ping0)。
-        - `fallback`: 是否开启自动降级 (True/False)。
+        - `source`: 检测源，可选 `both`、`ping0` 或 `ippure` (默认 `both`)。
+        - `fallback`: 单源模式是否开启自动降级 (True/False)。`source: both` 时忽略。
     - 运行 `python clash_automator.py`。
 
 ## Web 界面使用方法 (新版推荐)
@@ -104,12 +113,12 @@ Web可视化配置检测：
     ```bash
     python clash_automator.py
     ```
-    *默认使用浏览器模式 (包含 Bot 检测)。如需开启 **极速模式** (速度快 10 倍，无 Bot 检测)，请在 `config.yaml` 中设置 `fast_mode = True`。*
+    *默认使用极速模式，不启动浏览器。如需 Bot 比例检测，在 `config.yaml` 中设置 `fast_mode: false`，并先安装 Chromium。*
 
 3.  脚本将会:
     - 连接到 Clash API。
     - 切换到 "Global" (全局) 模式。
-    - 逐个测试代理节点, 访问IPPure获取ip信息。
+    - 逐个测试代理节点，默认同时访问 Ping0 和 IPPure。
     - 生成一个名为 `your_config_checked.yaml` 的新文件。
 4.  在项目当前文件夹下将生成的 `_checked.yaml` 文件导入 Clash 即可切换该配置查看结果！
     导入_checked.yaml配置
@@ -121,12 +130,25 @@ Web可视化配置检测：
 
 ### 🔍 结果解读
 
-格式： `【🟢🟡 机房|广播】` (默认浏览器模式) 或 `【⚪ 机房|广播】` (极速模式)
+双源模式默认使用两家各自的评分：
 
-*   **第 1 个 Emoji (⚪)**: **IP 纯净度** (值越低越好，越低越像真实用户)
-*   **第 2 个 Emoji (🟡)**: **Bot 比例** (浏览器模式独有，值越高来自机器人的流量更大更容易弹验证)
-*   **属性**: 住宅 / 机房 
-*   **来源**: 原生 / 广播
+```text
+【Ping0 20%｜IPPure 35%】
+【Ping0 超时｜IPPure 35%】
+```
+
+* 第一段是 Ping0 风控分，第二段是 IPPure 评分。分数越低越好。
+* 一家超时或失败时，仍显示另一家的分数。
+* 两家都失败时显示 `【Ping0 失败｜IPPure 失败】`。
+* 两家看到的出口 IP 不同时，页面状态显示 `⚠️ IP 不一致`，两家 IP 分别保留。
+* 两家分数不平均，也不生成“总风险分”。
+
+单源模式继续使用原来的 Emoji 后缀。格式随数据源和检测方式变化：
+
+* Ping0 极速模式：`【🟢🟡 住宅|原生】`。第 1 个 Emoji 是风控分，第 2 个 Emoji 是共享人数。
+* IPPure 浏览器模式：`【🟢🟡 住宅|原生】`。第 1 个 Emoji 是评分，第 2 个 Emoji 是 Bot 比例。
+* IPPure API 模式：`【🟢 住宅|原生】`。没有第 2 个 Emoji，因为 API 不返回 Bot 比例。
+* `住宅 / 机房` 是 **IP 类型**；`原生 / 广播` 是 **IP 来源**。两者是不同字段，可以独立组合。
 
 #### 📊 评分对照表
 
@@ -149,6 +171,23 @@ Web可视化配置检测：
 ## ⚙️ 配置项
 
 查看 `config.yaml.example` 获取所有可用配置项的说明。
+
+## 检测与恢复
+
+默认使用极速模式，同时查询 Ping0 和 IPPure。Ping0 单源限时 6 秒，IPPure API 限时 5 秒，浏览器检测限时 40 秒。每家独立记录成功、失败或超时；一家失败不会截断另一家的结果。
+
+旧配置写 `source: ping0` 或 `source: ippure` 时继续使用单源模式。打开 `fallback` 后，主源失败会尝试另一家。IPPure 不提供共享人数，API 模式不提供 Bot 比例。
+
+批量检测、单点重测和命令行检测会先读取原模式和所选代理组的当前节点。读取失败时不开始检测。检测结束后恢复原节点和模式；点击停止后，等待当前节点检测和恢复完成，再开始下一轮。恢复失败时会显示错误，需要你在 Clash 中手动恢复。强制结束进程或断电后需要手动检查设置。
+
+## 开发验证
+
+```bash
+python -m pip install -r requirements-dev.txt
+python -m unittest discover -s tests -v
+```
+
+回归测试使用模拟节点，不连接本机 Clash，也不切换实际节点。`requirements.lock` 固定运行依赖版本；修改 `requirements.txt` 后可运行 `uv pip compile --universal --python-version 3.10 requirements.txt -o requirements.lock` 更新。
 
 ## 🤝 贡献参与
 

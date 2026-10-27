@@ -42,23 +42,22 @@ class BrowserSource(BaseCheckSource):
             
         context = await self.browser.new_context(**context_args)
         
-        # Resource blocking
-        await context.route("**/*", lambda route: route.abort() 
-            if route.request.resource_type in ["image", "media", "font"] 
-            else route.continue_())
-
-        page = await context.new_page()
-        
         result = {
             "pure_emoji": "❓", "bot_emoji": "❓", "ip_attr": "❓", "ip_src": "❓",
             "pure_score": "❓", "bot_score": "❓", "full_string": "", "ip": "❓", "error": None, "source": "ippure"
         }
 
+        page = None
         try:
+            # Resource blocking
+            await context.route("**/*", lambda route: route.abort()
+                if route.request.resource_type in ["image", "media", "font"]
+                else route.continue_())
+            page = await context.new_page()
             await page.goto("https://ippure.com/", wait_until="domcontentloaded", timeout=20000)
             try:
                 await page.wait_for_selector("text=人机流量比", timeout=10000)
-            except: pass 
+            except Exception: pass
             
             await page.wait_for_timeout(2000)
             text = await page.inner_text("body")
@@ -104,14 +103,14 @@ class BrowserSource(BaseCheckSource):
             
             result["full_string"] = f"【{result['pure_emoji']}{result['bot_emoji']} {info}】"
 
+        except asyncio.CancelledError:
+            raise
         except Exception as e:
             result["error"] = str(e)
             result["full_string"] = "【❌ Error】"
         finally:
-            if not self.headless:
-                print("     [Debug] Waiting 5s before closing browser window...")
-                await asyncio.sleep(5)
-            await page.close()
+            if page:
+                await page.close()
             await context.close()
             
         return result

@@ -16,11 +16,14 @@ clash_api_secret: ""
 
 #-------------------可选配置-----------------
 
-# 优先数据源 (ping0 或 ippure), 默认 ping0
-source: "ping0"
+# 检测源 (both、ping0 或 ippure), 默认 both
+# both: 同时检测 Ping0 和 IPPure，分别显示两家结果
+# ping0 / ippure: 只检测指定主源，可按下面的 fallback 降级
+source: "both"
 
 # 是否允许降级 (True/False), 默认 True
-# True: 主源失败时尝试备用源
+# 仅 source 为 ping0 或 ippure 时生效
+# True: 主源失败时尝试另一家
 fallback: true
 
 

@@ -6,6 +6,8 @@ class AppState:
         self.checker = IPChecker(headless=True)
         self.task_id: Optional[str] = None
         self.is_running: bool = False
+        self.stop_requested: bool = False
+        self.task = None
         self.nodes: List[Dict] = []
         self.original_yaml: Dict = {}
         self.progress: int = 0

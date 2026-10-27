@@ -1,5 +1,6 @@
 import aiohttp
 import urllib.parse
+from contextlib import asynccontextmanager
 
 class ClashController:
     def __init__(self, api_url, secret=""):
@@ -42,6 +43,43 @@ class ClashController:
             print(f"API Error setting mode: {e}")
             return False
 
+    async def get_config(self):
+        """Read the current mode before changing any network settings."""
+        timeout = aiohttp.ClientTimeout(total=5)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.get(f"{self.api_url}/configs", headers=self.headers) as resp:
+                resp.raise_for_status()
+                return await resp.json()
+
+    @asynccontextmanager
+    async def testing_session(self, selector):
+        """Restore the original selection and mode on completion, failure or cancellation."""
+        config = await self.get_config()
+        proxies = await self.get_proxies()
+        mode = config.get("mode")
+        selection = (proxies or {}).get(selector, {}).get("now")
+        if not mode or not selection:
+            raise RuntimeError("无法读取原模式或代理组当前节点，未开始检测")
+
+        try:
+            if not await self.set_mode("global"):
+                raise RuntimeError("无法切换到全局模式，未开始检测")
+            yield
+        finally:
+            errors = []
+            try:
+                if not await self.switch_proxy(selector, selection):
+                    errors.append("恢复原节点失败")
+            except Exception as exc:
+                errors.append(f"恢复原节点失败: {exc}")
+            try:
+                if not await self.set_mode(mode):
+                    errors.append("恢复原模式失败")
+            except Exception as exc:
+                errors.append(f"恢复原模式失败: {exc}")
+            if errors:
+                raise RuntimeError("；".join(errors) + "，请在 Clash 中手动恢复")
+
     async def get_running_port(self):
         """Fetches the mixed-port or http-port from running instance."""
         try:
@@ -55,11 +93,11 @@ class ClashController:
         except Exception:
             pass
         return 7897 # Default fallback
-    
+
     async def get_proxies(self):
         """Fetches all proxies."""
         try:
-             async with aiohttp.ClientSession() as session:
+             async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=5)) as session:
                 async with session.get(f"{self.api_url}/proxies", headers=self.headers) as resp:
                     if resp.status == 200:
                         data = await resp.json()

@@ -1,22 +1,23 @@
 from .base import BaseCheckSource
-from curl_cffi.requests import Session
-import asyncio
+from curl_cffi.requests import AsyncSession
 from typing import Dict, Optional
 
 class IPPureSource(BaseCheckSource):
 
-
-    def _check_sync(self, proxy: Optional[str] = None):
+    async def check(self, proxy: Optional[str] = None) -> Dict:
         url = "https://my.123169.xyz/v1/info"
         result = {
             "pure_emoji": "❓", "shared_emoji": "❓", "ip_attr": "❓", "ip_src": "❓",
-            "pure_score": "❓", "shared_users": "N/A", "full_string": "", "ip": "❓", 
+            "pure_score": "❓", "shared_users": "N/A", "full_string": "", "ip": "❓",
             "error": None, "source": "ippure"
         }
         try:
             proxies = {"http": proxy, "https": proxy} if proxy else None
-            with Session(proxies=proxies, impersonate="chrome110", timeout=5) as session:
-                resp = session.get(url)
+            # The checker enforces the 5-second dual-source limit; keep the
+            # transport timeout longer so it reports a timeout instead of a
+            # transport error.
+            async with AsyncSession(proxies=proxies, impersonate="chrome110", timeout=10) as session:
+                resp = await session.get(url)
                 if resp.status_code == 200:
                     data = resp.json()
                     result["ip"] = data.get("ip", "❓")
@@ -47,7 +48,3 @@ class IPPureSource(BaseCheckSource):
             result["error"] = str(e)
             result["full_string"] = "【❌ Error】"
         return result
-
-    async def check(self, proxy: Optional[str] = None) -> Dict:
-        loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(None, self._check_sync, proxy)

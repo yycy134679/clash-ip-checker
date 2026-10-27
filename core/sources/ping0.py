@@ -22,30 +22,40 @@ class Ping0Source(BaseCheckSource):
         except Exception:
             return "❓"
 
-    async def check(self, proxy: Optional[str] = None) -> Optional[Dict]:
+    @staticmethod
+    def _result(source_error=None, full_string=""):
+        return {
+            "ip": "❓", "ip_attr": "❓", "ip_src": "❓",
+            "pure_score": "❓", "shared_users": "N/A",
+            "pure_emoji": "❓", "shared_emoji": "❓",
+            "full_string": full_string, "error": source_error, "source": "ping0"
+        }
+
+    async def check(self, proxy: Optional[str] = None) -> Dict:
         url = "https://ping0.cc/"
         proxies = {"http": proxy, "https": proxy} if proxy else None
         
         try:
-            async with AsyncSession(proxies=proxies, impersonate="chrome124", timeout=5) as session:
+            # The checker enforces the 6-second dual-source limit; keep the
+            # transport timeout longer so it reports a timeout instead of a
+            # transport error.
+            async with AsyncSession(proxies=proxies, impersonate="chrome124", timeout=10) as session:
                 resp = await session.get(url)
                 
                 if resp.status_code != 200:
-                    return None
+                    return self._result(
+                        f"HTTP {resp.status_code}",
+                        f"【❌ HTTP {resp.status_code}】",
+                    )
                 
                 html = resp.text
                 
                 # Cloudflare detection
                 if "<title>Just a moment...</title>" in html or "challenge-platform" in html or "cf-turnstile" in html:
-                    print("     [Ping0] Cloudflare blocked, falling back to ippure")
-                    return None
-                
-                result = {
-                    "ip": "❓", "ip_attr": "❓", "ip_src": "❓",
-                    "pure_score": "❓", "shared_users": "N/A",
-                    "pure_emoji": "❓", "shared_emoji": "❓",
-                    "full_string": "", "error": None, "source": "ping0"
-                }
+                    print("     [Ping0] Cloudflare blocked")
+                    return self._result("Cloudflare 验证拦截", "【❌ 验证拦截】")
+
+                result = self._result()
                 
                 # 1. IP
                 ip_match = re.search(r"window\.ip\s*=\s*'([^']+)'", html)
@@ -96,4 +106,4 @@ class Ping0Source(BaseCheckSource):
                 
         except Exception as e:
             print(f"     [Ping0] Error: {e}")
-            return None
+            return self._result(str(e), "【❌ Error】")

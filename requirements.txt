@@ -6,3 +6,4 @@ aiohttp
 playwright
 curl_cffi
 ruamel.yaml
+PyYAML

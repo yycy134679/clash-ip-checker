@@ -5,7 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Clash IP Checker - 节点纯净度检测与标记</title>
-    <meta name="description" content="全自动 Clash 代理节点检测工具，集成 IPPure 纯净度检测、自动切换节点、Bot 评分筛选。">
+    <meta name="description" content="全自动 Clash 代理节点检测工具，同时查询 Ping0 与 IPPure，分别展示 Ping0 风控分与共享人数、IPPure 评分与 Bot 比例，以及各自的 IP 属性。">
 
     <!-- Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -86,9 +86,9 @@
         <main>
             <section class="hero">
                 <h1>让节点质量 <br><span class="gradient-text">一目了然</span></h1>
-                <p>全自动检测 Clash 节点 IP 纯净度、Bot 比例、共享人数与风险属性（<a href="https://ippure.com" target="_blank"
-                        style="color: var(--accent-primary); text-decoration: none;">IPPure</a> or <a href="https://ping0.cc" target="_blank"
-                        style="color: var(--accent-primary); text-decoration: none;">Ping0</a>），自动生成节点标注配置<span
+                <p>全自动检测 Clash 节点，同时查询 <a href="https://ping0.cc" target="_blank"
+                        style="color: var(--accent-primary); text-decoration: none;">Ping0</a> 与 <a href="https://ippure.com" target="_blank"
+                        style="color: var(--accent-primary); text-decoration: none;">IPPure</a>，分别显示 Ping0 风控分与共享人数、IPPure 评分与 Bot 比例，以及各自的 IP 类型与 IP 来源，自动生成节点标注配置<span
                         style="color: var(--accent-primary); font-weight: 600;">避免选到垃圾节点</span>
                 </p>
                 <div class="cta-group">
@@ -143,8 +143,8 @@
                             <span class="line">Testing: HKG-01 倍率:1</span>
                             <span class="line"> -> Switching GLOBAL ...</span>
                             <span class="line"> -> Running IP Check...</span>
-                            <span class="line dim"> -> Result: 【🟢🔴 机房|原生】</span>
-                            <span class="line dim"> -> Details: IP: 1.1.1.1 | Score: 29% | Bot: 86.80%</span>
+                            <span class="line dim"> -> Result: 【Ping0 20%｜IPPure 35%】</span>
+                            <span class="line dim"> -> Details: Ping0: 20% | IPPure: 35% | IP: 1.1.1.1</span>
                             <br>
                             <span class="line cursor"><span class="green">Success!</span> Saved updated config to
                                 _checked.yaml</span>
@@ -166,8 +166,8 @@
                                 <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
                             </svg>
                         </div>
-                        <h3>IP 纯净度检测</h3>
-                        <p>集成 IPPure 数据源，深度检测 IP 的作弊值、Bot 分数及是否为数据中心 IP，确保账号安全。</p>
+                        <h3>Ping0 + IPPure 双源检测</h3>
+                        <p>同时查询两家评分，分别显示 IP 类型、原生／广播标记和失败原因。一家失败不会丢弃另一家的结果。</p>
                     </div>
                     <div class="feature-card">
                         <div class="icon">
@@ -177,7 +177,7 @@
                             </svg>
                         </div>
                         <h3>全自动运行</h3>
-                        <p>通过 Clash External API 自动切换节点并测试。无需人工干预，支持断点续传与失败重试。</p>
+                        <p>通过 Clash External API 自动切换节点并逐个测试。无需人工干预，支持单节点重测。</p>
                     </div>
                     <div class="feature-card">
                         <div class="icon">
@@ -221,6 +221,12 @@
             <!-- Result Interpretation (Replaced Usage) -->
             <section class="results-guide">
                 <h2>结果解读</h2>
+                <p style="max-width: 760px; margin: 0 auto 1.5rem; color: var(--text-secondary); line-height: 1.8;">
+                    双源模式使用两家的独立评分，例如 <code>【Ping0 20%｜IPPure 35%】</code>。
+                    一家超时会显示 <code>【Ping0 超时｜IPPure 35%】</code>，另一家的分数仍会保留。
+                    两家出口 IP 不同时显示“出口 IP 不一致”。分数越低越好，不计算平均分或总分。
+                    住宅／机房是 IP 类型，原生／广播是 IP 来源；两者是不同字段。
+                </p>
 
 
 
@@ -228,17 +234,17 @@
                     <div class="guide-item">
                         <span class="guide-emoji">🟢</span>
                         <h3 class="pure">纯净</h3>
-                        <p>IP 纯净度高，Bot 分数低，适合注册、登录等敏感操作。</p>
+                        <p>两家评分都低，IPPure 的 Bot 比例也低，适合注册、登录等敏感操作。</p>
                     </div>
                     <div class="guide-item">
                         <span class="guide-emoji">🟡</span>
                         <h3 class="normal">一般</h3>
-                        <p>存在一定风险，或 Bot 分数适中，日常浏览无碍。</p>
+                        <p>至少一家评分偏高，或 Bot 比例适中；日常浏览通常够用。</p>
                     </div>
                     <div class="guide-item">
                         <span class="guide-emoji">🔴</span>
                         <h3 class="risk">高危</h3>
-                        <p>IP 纯净度低或被标记为黑名单/数据中心，不仅限于流媒体解锁失败。</p>
+                        <p>两家评分都高，或一家明确标记为高风险；可能影响流媒体解锁和账号操作。</p>
                     </div>
                 </div>
             </section>

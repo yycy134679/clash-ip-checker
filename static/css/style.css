@@ -219,6 +219,12 @@ progress::-webkit-progress-value {
 }
 
 /* Results Table */
+.table-scroll {
+    overflow-x: auto;
+    margin: 0 -0.25rem;
+    padding: 0 0.25rem 0.25rem;
+}
+
 table {
     border-collapse: separate;
     border-spacing: 0 0.3rem;
@@ -226,6 +232,92 @@ table {
     font-size: 0.75rem;
     /* Smaller font */
     width: 100%;
+}
+
+.table-scroll table {
+    min-width: 1080px;
+}
+
+.node-cell {
+    max-width: 300px;
+    min-width: 160px;
+    white-space: normal;
+    overflow-wrap: anywhere;
+}
+
+.source-stack {
+    min-width: 118px;
+}
+
+.source-error {
+    display: block;
+    max-width: 150px;
+    margin-top: 2px;
+    color: #f87171;
+    font-size: 0.68rem;
+    line-height: 1.25;
+    white-space: normal;
+    overflow-wrap: anywhere;
+}
+
+.table-scroll-hint {
+    display: none;
+}
+
+.source-stack > div {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    line-height: 1.6;
+}
+
+.source-tag {
+    display: inline-flex;
+    align-items: center;
+    border-radius: 4px;
+    padding: 0 0.25rem;
+    font-size: 0.62rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    line-height: 1.45;
+}
+
+.source-tag.ping0 {
+    background: rgba(59, 130, 246, 0.18);
+    color: #93c5fd;
+}
+
+.source-tag.ippure {
+    background: rgba(168, 85, 247, 0.18);
+    color: #d8b4fe;
+}
+
+.source-na {
+    color: var(--text-muted);
+}
+
+.mismatch-hint {
+    display: block;
+    margin-top: 0.1rem;
+    color: #fbbf24;
+    font-size: 0.66rem;
+    line-height: 1.3;
+}
+
+tbody tr.partial {
+    background: rgba(251, 191, 36, 0.035);
+}
+
+tbody tr.ip-mismatch-row {
+    background: rgba(251, 191, 36, 0.055);
+}
+
+tbody tr.ip-mismatch-row td:first-child {
+    box-shadow: inset 2px 0 0 #fbbf24;
+}
+
+.actions-cell {
+    min-width: 112px;
 }
 
 thead th {
@@ -355,6 +447,24 @@ td:last-child {
     color: #60a5fa;
     text-decoration: underline;
     text-decoration-style: dotted;
+}
+
+@media (max-width: 900px) {
+    .results-section {
+        padding: 1rem;
+    }
+
+    .results-header {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .table-scroll-hint {
+        display: block;
+        margin-bottom: 0.5rem;
+        color: var(--text-muted);
+        font-size: 0.75rem;
+    }
 }
 
 /* Utilities */

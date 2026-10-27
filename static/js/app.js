@@ -12,7 +12,7 @@ function app() {
             clash_api_url: 'http://127.0.0.1:9097',
             clash_api_secret: '',
             // 可选配置
-            source: 'ping0',
+            source: 'both',
             fallback: true,
             output_suffix: '_checked',
             selector_name: 'GLOBAL',
@@ -21,6 +21,7 @@ function app() {
             skip_keywords_str: '剩余,重置,到期,有效期,官网,网址,更新,公告,建议'
         },
         isRunning: false,
+        isStopping: false,
         showProgress: false,
         progress: 0,
         total: 0,
@@ -32,6 +33,7 @@ function app() {
         // Edit state
         editingId: null,
         editValue: '',
+        recheckingId: null,
 
         // Export state
         exportedYaml: '',
@@ -45,11 +47,17 @@ function app() {
 
         // Initialize CodeMirror (only once)
         init() {
+            this.loadExistingNodes();
+
             // Prevent double initialization
             if (this.editor) return;
 
             const container = document.getElementById('yaml-editor');
             if (!container || container.querySelector('.CodeMirror')) return;
+            if (typeof CodeMirror === 'undefined') {
+                console.error('CodeMirror 加载失败，YAML 编辑器不可用');
+                return;
+            }
 
             this.editor = CodeMirror(container, {
                 mode: 'yaml',
@@ -78,15 +86,34 @@ function app() {
                     this.eventSource = null;
                 }
             });
+
         },
 
         isRechecking: false,  // Exclusive lock for recheck
 
         // Methods
+        async loadExistingNodes() {
+            try {
+                const res = await fetch('/api/nodes');
+                if (!res.ok) return;
+                const data = await res.json();
+                if (!data.nodes?.length) return;
+                this.nodes = data.nodes;
+                this.selected = this.nodes.map(node => node.id);
+                if (data.is_running) {
+                    this.isRunning = true;
+                    this.showProgress = true;
+                    this.connectSSE();
+                }
+            } catch (e) {
+                console.error('加载已有节点失败', e);
+            }
+        },
+
         async startCheck() {
             this.error = '';
             this.progress = 0;
-            this.isRechecking = false;
+            this.isStopping = false;
 
             try {
                 // Validate first
@@ -187,16 +214,18 @@ function app() {
                     }
                 } else if (data.type === 'complete') {
                     this.isRunning = false;
+                    this.isStopping = false;
                     this.currentNode = '';
                     this.eventSource.close();
                     this.eventSource = null;
                 } else if (data.type === 'stopped') {
                     this.isRunning = false;
+                    this.isStopping = false;
                     this.currentNode = '已停止';
                     this.eventSource.close();
                     this.eventSource = null;
                 } else if (data.type === 'error') {
-                    console.error('Node error:', data);
+                    this.error = data.error || '检测失败';
                 }
             };
 
@@ -212,6 +241,7 @@ function app() {
             if (this.isRunning || this.isRechecking) return;
 
             this.isRechecking = true;
+            this.recheckingId = node.id;
             const originalName = node.name;
             node.name = "⏳ 检测中..."; // Visual feedback
 
@@ -244,16 +274,19 @@ function app() {
                 const idx = this.nodes.findIndex(n => n.id === node.id);
                 if (idx !== -1) this.nodes[idx].name = originalName;
             } finally {
+                this.recheckingId = null;
                 this.isRechecking = false;
             }
         },
 
         async stopCheck() {
             try {
-                await fetch('/api/stop', { method: 'POST' });
-                this.isRunning = false;
+                const res = await fetch('/api/stop', { method: 'POST' });
+                if (!res.ok) throw new Error((await res.json()).detail);
+                this.isStopping = true;
+                this.currentNode = '正在停止并恢复原设置...';
             } catch (e) {
-                console.error('Stop failed:', e);
+                this.error = `停止失败: ${e.message}`;
             }
         },
 
@@ -276,6 +309,7 @@ function app() {
 
         // Edit
         startEdit(node) {
+            if (this.isRunning || this.isRechecking) return;
             this.editingId = node.id;
             this.editValue = node.name;
             this.$nextTick(() => {
@@ -287,12 +321,16 @@ function app() {
         async saveEdit(node) {
             if (this.editValue.trim() && this.editValue !== node.name) {
                 try {
-                    await fetch(`/api/nodes/${node.id}`, {
+                    const res = await fetch(`/api/nodes/${node.id}`, {
                         method: 'PUT',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ name: this.editValue })
                     });
-                    node.name = this.editValue;
+                    if (res.ok) {
+                        const data = await res.json();
+                        node.name = data.node.name;
+                        node.display_base_name = data.node.display_base_name;
+                    }
                 } catch (e) {
                     console.error('Save failed:', e);
                 }
@@ -319,7 +357,7 @@ function app() {
 
         // Risk color class based on percentage (Matches Python get_emoji logic)
         getRiskClass(risk) {
-            if (!risk || risk === '❓' || risk === 'N/A') return '';
+            if (risk === null || risk === undefined || risk === '' || risk === '❓' || risk === 'N/A') return '';
             const num = parseInt(risk);
             if (isNaN(num)) return '';
 
@@ -352,6 +390,140 @@ function app() {
             if (upper <= 1000) return 'shared-orange';
             if (upper <= 10000) return 'shared-red';
             return 'shared-black';
+        },
+
+        getSourceEntry(node, source) {
+            return node?.source_results?.[source] || null;
+        },
+
+        hasSource(node, source) {
+            const entry = this.getSourceEntry(node, source);
+            if (entry) return entry.status !== 'not_requested';
+            return node?.source === source;
+        },
+
+        sourceScore(node, source) {
+            const entry = this.getSourceEntry(node, source);
+            if (!entry) {
+                return node?.source === source ? (node.risk ?? '未检测') : '未检测';
+            }
+            if (entry.status === 'timeout') return '超时';
+            if (entry.status === 'failed') return '失败';
+            if (entry.status === 'not_requested') return '未检测';
+            if (entry.status === 'success' && entry.pure_score !== null && entry.pure_score !== undefined) {
+                return entry.pure_score;
+            }
+            return '失败';
+        },
+
+        sourceRiskClass(node, source) {
+            const entry = this.getSourceEntry(node, source);
+            if (!entry) {
+                return node?.source === source ? this.getRiskClass(node.risk) : 'source-na';
+            }
+            if (entry.status === 'timeout' || entry.status === 'failed') return 'status-error';
+            if (entry.status === 'not_requested') return 'source-na';
+            return this.getRiskClass(entry.pure_score);
+        },
+
+        sourceIp(node, source) {
+            const entry = this.getSourceEntry(node, source);
+            if (!entry) return node?.source === source ? (node.ip || '—') : '—';
+            return entry.status === 'success' ? (entry.ip || '—') : '—';
+        },
+
+        sourceIdentity(node, source) {
+            const entry = this.getSourceEntry(node, source);
+            if (!entry) {
+                if (node?.source !== source) return '—';
+                return `${node.type || '❓'}|${node.native || '❓'}`;
+            }
+            if (entry.status === 'timeout') return '超时';
+            if (entry.status === 'failed') return '失败';
+            if (entry.status === 'not_requested') return '未检测';
+            return `${entry.ip_attr || '❓'}|${entry.ip_src || '❓'}`;
+        },
+
+        sourceIdentityClass(node, source) {
+            const entry = this.getSourceEntry(node, source);
+            if (!entry) return '';
+            if (entry.status === 'not_requested') return 'source-na';
+            if (entry.status === 'timeout' || entry.status === 'failed') return 'status-error';
+            return '';
+        },
+
+        sourceShared(node) {
+            const entry = this.getSourceEntry(node, 'ping0');
+            if (!entry) return node?.source === 'ping0' ? (node.shared || 'N/A') : '未检测';
+            if (entry.status !== 'success') {
+                return entry.status === 'not_requested' ? '未检测' : '—';
+            }
+            return entry.shared_users ?? 'N/A';
+        },
+
+        sourceSharedClass(node) {
+            const entry = this.getSourceEntry(node, 'ping0');
+            const value = this.sourceShared(node);
+            if (entry && entry.status !== 'success') {
+                return 'source-na';
+            }
+            if (value === '未检测') return 'source-na';
+            return this.getSharedClass(value);
+        },
+
+        sourceBot(node) {
+            const entry = this.getSourceEntry(node, 'ippure');
+            if (!entry) return node?.source === 'ippure' ? (node.bot || 'N/A') : '未检测';
+            if (entry.status !== 'success') {
+                return entry.status === 'not_requested' ? '未检测' : '—';
+            }
+            const bot = entry.bot_score;
+            if (bot === null || bot === undefined || bot === '' || bot === 'N/A' || bot === '❓') {
+                return '未检测';
+            }
+            return bot;
+        },
+
+        sourceBotClass(node) {
+            const entry = this.getSourceEntry(node, 'ippure');
+            if (entry && entry.status !== 'success') {
+                return 'source-na';
+            }
+            const value = this.sourceBot(node);
+            if (value === '未检测' || value === 'N/A') return 'source-na';
+            return this.getRiskClass(value);
+        },
+
+        sourceError(node, source) {
+            const entry = this.getSourceEntry(node, source);
+            if (entry) return entry.error || '';
+            return node?.source === source ? (node?.error || '') : '';
+        },
+
+        sourceErrorDetail(node, source) {
+            const entry = this.getSourceEntry(node, source);
+            if (entry) {
+                return entry.status === 'failed' ? (entry.error || '') : '';
+            }
+            if (node?.source === source && node?.status?.includes('失败')) {
+                return node?.error || '';
+            }
+            return '';
+        },
+
+        nodeStatusClass(node) {
+            if (node?.status === 'pending' || node?.status?.includes('检测中')) return '';
+            if (node?.status?.includes('未检测')) return 'source-na';
+            if (node?.check_status === 'failed' || node?.status?.includes('失败')) return 'status-error';
+            if (node?.check_status === 'partial' || node?.check_status === 'ip_mismatch' ||
+                node?.status?.includes('⚠️')) return 'status-warn';
+            return 'status-ok';
+        },
+
+        nodeStatusText(node) {
+            if (node?.status === 'pending') return '⏳ 等待检测';
+            if (node?.status === '✅') return '✅ 成功';
+            return node?.status || '';
         },
 
         // Export
@@ -389,7 +561,6 @@ function app() {
                         lineWrapping: true,
                         value: this.exportedYaml
                     });
-                    setTimeout(() => this.exportEditor.refresh(), 50);
                 });
 
             } catch (e) {

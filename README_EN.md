@@ -3,23 +3,24 @@
 [中文](README.md) | [English](README_EN.md)
 
 ![Python](https://img.shields.io/badge/Python-3.10%2B-blue)
-![License](https://img.shields.io/badge/License-MIT-green)
+![License](https://img.shields.io/badge/License-GPL--3.0-green)
 
-An intelligent automation tool for **Clash Verge** (and compatible cores) that automatically tests your proxy nodes, checks their IP purity/risk score via [IPPure](https://ippure.com/), and renames them with useful indicators (Bot Score, IP Risk, Native/Broadcast status).
+An intelligent automation tool for **Clash Verge** (and compatible cores). It tests each proxy node through both [Ping0](https://ping0.cc/) and [IPPure](https://ippure.com/) by default, shows each provider's score and IP details separately, and adds the results to node names. Scores are never averaged into a combined risk score.
 
 ![Demo Image](assets/clash-node-checked.png)
 
-> **Note**: This tool uses **Playwright** for accurate browser-based fingerprinting detection, ensuring the results match what a real user would see.
+> **Note**: Browser Mode uses **Playwright** for fingerprint-based detection and IPPure's Bot ratio. Fast Mode uses the provider APIs and does not return a Bot ratio.
 
 ## ✨ Features
 
-- **⚡ Fast Mode (New!)**: Enabled by default (set to `false` in config to disable), uses direct API checks for 10x faster speed!
+- **Dual-Source Checks (Default)**: Queries Ping0 and IPPure, then displays `Ping0 risk` and `IPPure score` separately. One provider failing does not discard the other provider's result.
+- **⚡ Fast Mode (New!)**: Enabled by default (set to `false` in config to disable), uses direct API checks for faster runs.
 - **Auto-Switching**: Automatically cycles through your Clash proxies.
-- **Deep IP Analysis**: Checks IP Pure Score, Bot Ratio (Browser Mode only), IP Attributes (Native/Data Center), and Source.
+- **Deep IP Analysis**: Checks risk scores, IP type (Residential/Data Center), IP source (Native/Broadcast), shared users, and IPPure's Bot ratio in Browser Mode.
 - **High-Fidelity Detection (Optional)**: Uses **Playwright** in Browser Mode for accurate fingerprinting detection including Bot Score.
 - **Smart Filtering**: Skips invalid nodes (e.g., "Expire Date", "Traffic Reset") automatically.
 - **Config Injection**: Generates a new Clash Config (`_checked.yaml`) with emojis and stats appended to node names.
-- **Global Mode Force**: Temporarily forces Clash into Global mode for accurate testing.
+- **Global Mode Force**: Saves the current mode and selected node, uses Global mode during testing, and restores both afterward.
 
 ## 🛠️ Prerequisites
 
@@ -38,7 +39,10 @@ An intelligent automation tool for **Clash Verge** (and compatible cores) that a
 
 2.  **Install Dependencies**
     ```bash
-    pip install -r requirements.txt
+    python3 -m venv .venv
+    source .venv/bin/activate
+    python -m pip install -r requirements.lock
+    # Browser Mode only
     playwright install chromium
     # If playwright install fails, try: python -m playwright install chromium
     ```
@@ -47,6 +51,8 @@ An intelligent automation tool for **Clash Verge** (and compatible cores) that a
     - **Rename `config.yaml.example` to `config.yaml`**.
     - Edit `config.yaml` and fill in your details:
         - `fast_mode`: ⚡ Enable Fast Mode (True/False).
+        - `source`: `both` (default), `ping0`, or `ippure`.
+        - `fallback`: Retry with the other provider when a single source fails. Ignored when `source` is `both`.
         - `yaml_path`: The absolute path to your current Clash configuration file.
           > **Windows Tip**: Use single quotes `'` around the path (e.g., `'C:\Users\...'`) to avoid having to double-escape backslashes.
         - `clash_api_secret`: Your API key (if any).
@@ -62,12 +68,12 @@ An intelligent automation tool for **Clash Verge** (and compatible cores) that a
     ```bash
     python clash_automator.py
     ```
-    *By default, Browser Mode (with Bot Score) is used. To enable **Fast Mode** (10x faster, no Bot Score), set `fast_mode: true` in `config.yaml`.*
+    *Fast Mode is enabled by default and does not launch Chromium. For Browser Mode, install Chromium and set `fast_mode: false` in `config.yaml`.*
 
 4.  The script will:
     - Connect to Clash API.
     - Switch to "Global" mode.
-    - Test each proxy one by one via external API (Fast Mode) or Browser (Browser Mode).
+    - Test each proxy one by one through Ping0 and IPPure.
     - Generate a new file named `your_config_checked.yaml`.
 5.  Import the new `_checked.yaml` into Clash to see the results!
     ![Import Config](assets/clash-import.png)
@@ -78,12 +84,25 @@ Your proxy nodes will be renamed to provide instant visibility into their qualit
 
 ### 🔍 Result Interpretation
 
-Format: `【🟢🟡 DataCenter|Broadcast】` (Browser Model - Default) or `【⚪ DataCenter|Broadcast】` (Fast Mode)
+Dual-source mode uses each provider's numeric score:
 
-*   **1st Emoji (🔵/⚪)**: **IP Purity Score** (Lower is better, looks more like a real user)
-*   **2nd Emoji (🟡)**: **Bot Score** (Browser Mode only, lower is better, less likely to be blocked)
-*   **Attributes**: Residential / Data Center
-*   **Source**: Native / Broadcast
+```text
+【Ping0 20%｜IPPure 35%】
+【Ping0 超时｜IPPure 35%】
+```
+
+* The first value is Ping0's risk score; the second is IPPure's score. Lower is better.
+* If one provider fails or times out, the other provider's result remains visible.
+* If both fail, the suffix is `【Ping0 失败｜IPPure 失败】`.
+* If the two providers see different exit IPs, the UI shows `⚠️ IP mismatch` and keeps both IPs.
+* Scores are not averaged, and there is no combined risk score.
+
+Single-source mode keeps the original Emoji format. The meaning of the second Emoji depends on the source and mode:
+
+* Ping0 Fast Mode: `【🟢🟡 住宅|原生】`. The first Emoji is the risk score; the second is shared users.
+* IPPure Browser Mode: `【🟢🟡 住宅|原生】`. The first Emoji is the score; the second is the Bot ratio.
+* IPPure API Mode: `【🟢 住宅|原生】`. There is no second Emoji because the API does not return a Bot ratio.
+* `住宅 / 机房` is the **IP type**; `原生 / 广播` is the **IP source**. They are separate fields.
 
 #### 📊 Score Legend
 
@@ -106,6 +125,23 @@ Format: `【🟢🟡 DataCenter|Broadcast】` (Browser Model - Default) or `【�
 ## ⚙️ Configuration
 
 See `config.yaml.example` for all available options.
+
+## Detection and recovery
+
+By default, Fast Mode queries Ping0 and IPPure concurrently. Ping0 has a 6-second limit, the IPPure API has a 5-second limit, and Browser Mode has a 40-second limit. Each provider records success, failure, or timeout independently.
+
+Older configs with `source: ping0` or `source: ippure` keep single-source behavior. With `fallback` enabled, a failed primary source is retried against the other provider. IPPure does not provide shared-user counts, and API mode does not provide a Bot ratio.
+
+Batch checks, single-node rechecks and CLI checks save the original mode and selected node before changing them. If that snapshot fails, the check does not start. Stop waits for the current check and restoration to finish before allowing another run. Restoration failures are shown and require manual recovery in Clash. Check the settings manually after a forced process termination or power loss.
+
+## Development checks
+
+```bash
+python -m pip install -r requirements-dev.txt
+python -m unittest discover -s tests -v
+```
+
+Tests use simulated nodes and never connect to the local Clash instance. Runtime dependencies are pinned in `requirements.lock`; regenerate it with `uv pip compile --universal --python-version 3.10 requirements.txt -o requirements.lock` after dependency changes.
 
 ## 🤝 Contributing
 
