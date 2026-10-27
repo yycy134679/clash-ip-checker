@@ -14,7 +14,7 @@ An intelligent automation tool for **Clash Verge** (and compatible cores). It te
 ## ✨ Features
 
 - **Dual-Source Checks (Default)**: Queries Ping0 and IPPure, then displays `Ping0 risk` and `IPPure score` separately. One provider failing does not discard the other provider's result.
-- **⚡ Fast Mode (New!)**: Enabled by default (set to `false` in config to disable), uses direct API checks for faster runs.
+- **⚡ Fast Mode (New!)**: Enabled by default and uses direct API checks for faster runs. Change it in the Web interface, or set `fast_mode: false` in `config.yaml` for the CLI.
 - **Auto-Switching**: Automatically cycles through your Clash proxies.
 - **Deep IP Analysis**: Checks risk scores, IP type (Residential/Data Center), IP source (Native/Broadcast), shared users, and IPPure's Bot ratio in Browser Mode.
 - **High-Fidelity Detection (Optional)**: Uses **Playwright** in Browser Mode for accurate fingerprinting detection including Bot Score.
@@ -52,7 +52,7 @@ An intelligent automation tool for **Clash Verge** (and compatible cores). It te
     - Edit `config.yaml` and fill in your details:
         - `fast_mode`: ⚡ Enable Fast Mode (True/False).
         - `source`: `both` (default), `ping0`, or `ippure`.
-        - `fallback`: Retry with the other provider when a single source fails. Ignored when `source` is `both`.
+        - `fallback`: Allow a retry with the other provider in single-source mode. See the limits under Detection and recovery.
         - `yaml_path`: The absolute path to your current Clash configuration file.
           > **Windows Tip**: Use single quotes `'` around the path (e.g., `'C:\Users\...'`) to avoid having to double-escape backslashes.
         - `clash_api_secret`: Your API key (if any).
@@ -128,9 +128,9 @@ See `config.yaml.example` for all available options.
 
 ## Detection and recovery
 
-By default, Fast Mode queries Ping0 and IPPure concurrently. Ping0 has a 6-second limit, the IPPure API has a 5-second limit, and Browser Mode has a 40-second limit. Each provider records success, failure, or timeout independently.
+By default, Fast Mode queries Ping0 and IPPure concurrently. Dual-source checks first obtain the exit IP, then limit Ping0 to 6 seconds and IPPure to 5 seconds for its API or 40 seconds for its browser check. Each provider records success, failure, or timeout independently.
 
-Older configs with `source: ping0` or `source: ippure` keep single-source behavior. With `fallback` enabled, a failed primary source is retried against the other provider. IPPure does not provide shared-user counts, and API mode does not provide a Bot ratio.
+Configs with `source: ping0` or `source: ippure` use single-source mode. In Fast Mode, `fallback` retries the other provider if the primary fails; obtaining the IP and checking both providers share a 3-second limit, after which the check ends. Selecting Ping0 with Browser Mode still uses the fast check. If an IPPure single-source browser check fails or times out and `fallback` is enabled, Ping0 is tried in Fast Mode with a separate 3-second limit. IPPure does not provide shared-user counts, and API mode does not provide a Bot ratio.
 
 Batch checks, single-node rechecks and CLI checks save the original mode and selected node before changing them. If that snapshot fails, the check does not start. Stop waits for the current check and restoration to finish before allowing another run. Restoration failures are shown and require manual recovery in Clash. Check the settings manually after a forced process termination or power loss.
 

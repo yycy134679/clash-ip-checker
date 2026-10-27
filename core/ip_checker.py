@@ -143,7 +143,19 @@ class IPChecker:
                 use_cache=use_cache,
             )
         elif source == "ippure":
-            result = await self.check_browser(proxy, use_cache=use_cache)
+            try:
+                result = await self.check_browser(proxy=proxy, use_cache=use_cache)
+            except Exception as exc:
+                result = failed_result("ippure", str(exc))
+            if fallback and source_result("ippure", result)["status"] != "success":
+                try:
+                    backup = await self.check_fast(
+                        proxy, source="ping0", fallback=False, use_cache=use_cache
+                    )
+                except Exception:
+                    backup = None
+                if backup and backup.get("source") == "ping0" and source_result("ping0", backup)["status"] == "success":
+                    result = backup
         else:
             result = await self.check_fast(
                 proxy,

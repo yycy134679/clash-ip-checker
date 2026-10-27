@@ -34,8 +34,8 @@ Web可视化配置检测：
 ## ✨ 功能特点
 
 - **🖥️ Web 可视化界面 (新!)**: 提供现代化的 Web 界面，支持可视化配置，检测可查看实时进度显示、单点重测、结果编辑和导出预览，支持一键跳转导入Clash。
-- **极速模式**: 默认 **开启**，通过 Ping0 和 IPPure API 直接检测，速度比浏览器模式更快。可在 `config.yaml` 中设置 `fast_mode: false` 关闭。
-- **双源检测（默认）**: 同时查询 Ping0 和 IPPure，分别显示 `Ping0 风控`、`IPPure 评分`。也可以切换到单一主源，继续使用自动降级 (Fallback)。
+- **极速模式**: 默认 **开启**，通过 Ping0 和 IPPure API 直接检测，速度比浏览器模式更快。Web 界面可直接切换；命令行可在 `config.yaml` 中设置 `fast_mode: false`。
+- **双源检测（默认）**: 同时查询 Ping0 和 IPPure，分别显示 `Ping0 风控`、`IPPure 评分`。也可以切换到单一主源；降级限制见下方「检测与恢复」。
 - **数据归属清楚**: Ping0 提供共享人数，IPPure 浏览器模式提供 Bot 比例。任一 API 模式都不提供 Bot 比例；IPPure API 也不提供共享人数。
 - **自动切换**: 自动遍历并切换你的 Clash 代理节点。
 - **深度 IP 分析**: 检测 IP 风险分、IP 类型 (住宅/机房)、IP 来源 (原生/广播) 和共享人数。浏览器模式还会显示 IPPure 的 Bot 比例。
@@ -81,12 +81,12 @@ Web可视化配置检测：
     
 4.  **命令行模式 (旧版)**
     - 修改 `config.yaml.example` 删除后缀重命名为 `config.yaml`。
-    - 编辑 `config.yaml` 填入配置（Web 界面中也可直接设置）：
+    - 编辑 `config.yaml` 填入命令行配置。Web 界面使用页面上的独立设置，不读取此文件：
         - `yaml_path`: 你的 Clash 配置文件 (**.yaml**) 的绝对路径。
         - `clash_api_secret`: 你的 API 密钥 (如果有的话)。
         - `fast_mode`: ⚡ 是否使用极速模式 (True/False)。
         - `source`: 检测源，可选 `both`、`ping0` 或 `ippure` (默认 `both`)。
-        - `fallback`: 单源模式是否开启自动降级 (True/False)。`source: both` 时忽略。
+        - `fallback`: 单源检测是否尝试备用检测源 (True/False)。具体限制见下方「检测与恢复」。
     - 运行 `python clash_automator.py`。
 
 ## Web 界面使用方法 (新版推荐)
@@ -174,9 +174,9 @@ Web可视化配置检测：
 
 ## 检测与恢复
 
-默认使用极速模式，同时查询 Ping0 和 IPPure。Ping0 单源限时 6 秒，IPPure API 限时 5 秒，浏览器检测限时 40 秒。每家独立记录成功、失败或超时；一家失败不会截断另一家的结果。
+默认使用极速模式，同时查询 Ping0 和 IPPure。双源检测先获取出口 IP，再分别限制 Ping0 检测为 6 秒、IPPure API 检测为 5 秒或 IPPure 浏览器检测为 40 秒。每家独立记录成功、失败或超时；一家失败不会截断另一家的结果。
 
-旧配置写 `source: ping0` 或 `source: ippure` 时继续使用单源模式。打开 `fallback` 后，主源失败会尝试另一家。IPPure 不提供共享人数，API 模式不提供 Bot 比例。
+`source: ping0` 或 `source: ippure` 使用单源模式。极速单源检测在主源失败且 `fallback` 开启时尝试另一家；获取 IP、主源和备用源共用 3 秒时限，超时会直接结束。选择 Ping0 单源浏览器模式时仍使用极速检测。IPPure 单源浏览器检测失败或超时后，若开启 `fallback`，会使用 Ping0 的极速检测作为备用，备用检测另限时 3 秒。IPPure 不提供共享人数，API 模式不提供 Bot 比例。
 
 批量检测、单点重测和命令行检测会先读取原模式和所选代理组的当前节点。读取失败时不开始检测。检测结束后恢复原节点和模式；点击停止后，等待当前节点检测和恢复完成，再开始下一轮。恢复失败时会显示错误，需要你在 Clash 中手动恢复。强制结束进程或断电后需要手动检查设置。
 
