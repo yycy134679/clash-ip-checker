@@ -23,10 +23,7 @@ async def lifespan(app: FastAPI):
     yield
     # Shutdown
     print("[Web] Shutting down, cleaning up resources...")
-    state.stop_requested = True
-    if state.task and not state.task.done():
-        await state.task
-    await state.checker.stop()
+    await state.shutdown()
 
 app = FastAPI(title="Clash IP Checker", lifespan=lifespan)
 

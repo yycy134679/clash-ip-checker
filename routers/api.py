@@ -7,233 +7,34 @@ import json
 import copy
 import io
 import os
-from typing import Dict, List, Any
 
 # Local imports
-from state import state
+from state import state, TaskBusyError, NodeNotFoundError
 from schemas import StartRequest, UpdateNodeRequest, ExportRequest, RecheckRequest
-from core.clash_api import ClashController
-from core.results import (
-    SOURCES,
-    build_node_result,
-    failure_aggregate,
-    not_requested,
-)
 
 router = APIRouter(prefix="/api")
 yaml = YAML()
 yaml.preserve_quotes = True
 
-def node_from_result(node_id, original_name, proxy, result, source, display_base_name=None, name_suffix=None):
-    return build_node_result(
-        node_id=node_id,
-        original_name=original_name,
-        proxy=proxy,
-        result=result,
-        requested_source=source,
-        display_base_name=display_base_name,
-        name_suffix=name_suffix,
-    )
-
-
-# --- Helper Function to run check in background ---
-async def _run_check(proxies: List[Dict], config: Dict):
-    """Background task: check all nodes using Clash API"""
-    # Get config values
-    api_url = config.get("clash_api_url", "http://127.0.0.1:9097")
-    api_secret = config.get("clash_api_secret", "")
-    selector = config.get("selector_name", "GLOBAL")
-    fast_mode = config.get("fast_mode", True)
-    source = config.get("source", "both")
-    fallback = config.get("fallback", True)
-    headless = config.get("headless", True)
-
-    # Update checker headless setting dynamically
-    state.checker.headless = headless
-
-    # Check if empty
-    if not proxies:
-        state.is_running = False
-        state.events.append({"type": "complete", "total": 0})
-        return
-
-    state.total = len(proxies)
-
-    # Initialize Clash controller
-    controller = ClashController(api_url, api_secret)
-
-    try:
-        async with controller.testing_session(selector):
-            port = await controller.get_running_port()
-            proxy_url = f"http://127.0.0.1:{port}"
-            checked_count = 0
-
-            for i, proxy in enumerate(proxies):
-                if state.stop_requested:
-                    break
-
-                name = proxy.get("name", f"Node {i}")
-                state.current_node = name
-
-                try:
-                    # 1. Switch to this node via Clash API
-                    print(f"[Web] Switching to: {name}")
-                    switched = await controller.switch_proxy(selector, name)
-
-                    if not switched:
-                        node_data = node_from_result(
-                            i,
-                            name,
-                            proxy,
-                            failure_aggregate(source, "切换节点失败"),
-                            source,
-                            name_suffix="【❌ 切换失败】",
-                        )
-                        node_data["status"] = "❌ 切换失败"
-                        state.nodes[i] = node_data
-                        state.events.append({"type": "progress", "progress": checked_count + 1, "total": state.total, "node": node_data})
-                        checked_count += 1
-                        continue
-
-                    # 2. Wait for switch to take effect
-                    await asyncio.sleep(1)
-
-                    # 3. Check IP through Clash proxy
-                    result = await state.checker.check_sources(
-                        proxy_url,
-                        mode="fast" if fast_mode else "browser",
-                        source=source,
-                        fallback=fallback,
-                    )
-
-                    node_data = node_from_result(i, name, proxy, result, source)
-                    state.nodes[i] = node_data
-
-                    # Push event
-                    checked_count += 1
-                    state.events.append({
-                        "type": "progress",
-                        "progress": checked_count,
-                        "total": state.total,
-                        "node": node_data
-                    })
-
-                except Exception as e:
-                    node_data = node_from_result(
-                        i,
-                        name,
-                        proxy,
-                        failure_aggregate(source, str(e)),
-                        source,
-                        name_suffix="【❌ Error】",
-                    )
-                    node_data["error"] = str(e)
-                    state.nodes[i] = node_data
-                    checked_count += 1
-                    state.events.append({
-                        "type": "error",
-                        "node_name": name,
-                        "error": str(e)
-                    })
-                    state.events.append({"type": "progress", "progress": checked_count, "total": state.total, "node": node_data})
-
-                state.progress = checked_count
-
-    except Exception as e:
-        state.events.append({"type": "error", "node_name": "Clash API", "error": str(e)})
-    finally:
-        state.checker.clear_cache()
-        for node in state.nodes:
-            if node.get("status") == "pending":
-                node["status"] = "⏹ 未检测" if state.stop_requested else "❌ 未检测"
-                node["ip"] = "❓"
-                state.events.append({"type": "update", "node": node})
-        state.is_running = False
-        event_type = "stopped" if state.stop_requested else "complete"
-        state.events.append({"type": event_type, "total": len(state.nodes)})
-
-
-# --- Routes ---
-
 @router.post("/validate")
 async def validate_yaml(request: StartRequest):
-    """Validate YAML format"""
     try:
-        data = yaml.load(request.yaml_content)
-        if not data:
-            return JSONResponse({"valid": False, "error": "YAML 内容为空"}, status_code=400)
-
-        proxies = data.get("proxies", [])
-        if not proxies:
-            return JSONResponse({"valid": False, "error": "未找到 proxies 节点"}, status_code=400)
-
+        proxies = state.validate_input(yaml.load(request.yaml_content))
         return {"valid": True, "node_count": len(proxies)}
-
-    except YAMLError as e:
-        return JSONResponse({"valid": False, "error": f"YAML 解析错误: {str(e)}"}, status_code=400)
+    except (YAMLError, ValueError) as exc:
+        return JSONResponse({"valid": False, "error": str(exc)}, status_code=400)
 
 
 @router.post("/start")
 async def start_check(request: StartRequest):
-    """Start node checking task"""
     if state.is_running:
         raise HTTPException(status_code=409, detail="任务正在运行中")
-
     try:
-        data = yaml.load(request.yaml_content)
-        proxies = data.get("proxies", [])
-
-        if not proxies:
-            raise HTTPException(status_code=400, detail="未找到 proxies 节点")
-
-        # Initialize state
-        state.task_id = str(uuid.uuid4())
-        state.is_running = True
-        state.stop_requested = False
-        state.original_yaml = data
-        state.nodes = []
-        state.events = []  # Clear previous events
-        state.progress = 0
-        # Filter proxies based on skip keywords
-        skip_keywords_str = request.config.get("skip_keywords_str", "")
-        skip_keywords = [kw.strip() for kw in skip_keywords_str.split(",") if kw.strip()]
-
-        active_proxies = []
-        for p in proxies:
-            name = p.get("name", "")
-            if skip_keywords and any(kw in name for kw in skip_keywords):
-                print(f"[Web] Skipping (in start): {name}")
-                continue
-            active_proxies.append(p)
-
-            # Pre-fill node for immediate display
-            state.nodes.append({
-                "id": len(active_proxies) - 1,
-                "original_name": name,
-                "display_base_name": name,
-                "name": name,
-                "ip": "...",
-                "risk": "",
-                "shared": "",
-                "type": "",
-                "native": "",
-                "source": "",
-                "source_results": {source_name: not_requested(source_name) for source_name in SOURCES},
-                "check_status": "failed",
-                "ip_mismatch": False,
-                "status": "pending",
-                "proxy_config": p
-            })
-
-        state.total = len(active_proxies)
-
-        # Start background task with filtered proxies
-        state.task = asyncio.create_task(_run_check(active_proxies, request.config))
-
-        return {"task_id": state.task_id, "total": state.total}
-
-    except YAMLError as e:
-        raise HTTPException(status_code=400, detail=f"YAML 解析错误: {str(e)}")
+        return state.start_batch(yaml.load(request.yaml_content), request.config)
+    except TaskBusyError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    except (YAMLError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
 
 @router.get("/progress")
@@ -264,10 +65,10 @@ async def progress_stream():
 @router.post("/stop")
 async def stop_check():
     """Stop running task"""
-    if not state.is_running:
-        raise HTTPException(status_code=400, detail="没有正在运行的任务")
-
-    state.stop_requested = True
+    try:
+        state.request_stop()
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
     return {"status": "stopping"}
 
 
@@ -315,100 +116,14 @@ async def delete_node(node_id: int):
 @router.post("/nodes/{node_id}/recheck")
 async def recheck_node(node_id: int, request: RecheckRequest):
     """Recheck a specific node"""
-    if state.is_running:
-        raise HTTPException(status_code=409, detail="请先停止当前的批量检测任务")
-
-    # Find the node
-    target_node = None
-    target_index = -1
-    for i, node in enumerate(state.nodes):
-        if node["id"] == node_id:
-            target_node = node
-            target_index = i
-            break
-
-    if not target_node:
-        raise HTTPException(status_code=404, detail="节点不存在")
-
-    original_name = target_node.get("original_name", target_node["name"])
-    display_base_name = target_node.get("display_base_name", original_name)
-
-    # Get config from request
-    config = request.config
-
-    api_url = config.get("clash_api_url", "http://127.0.0.1:9097")
-    api_secret = config.get("clash_api_secret", "")
-    selector = config.get("selector_name", "GLOBAL")
-    fast_mode = config.get("fast_mode", True)
-    source = config.get("source", "both")
-    fallback = config.get("fallback", True)
-    headless = config.get("headless", True)
-
-    # Update checker headless setting dynamically
-    state.checker.headless = headless
-
-
-
-
-    controller = ClashController(api_url, api_secret)
-
-    state.is_running = True
-    state.stop_requested = False
     try:
-        async with controller.testing_session(selector):
-            # 1. Switch
-            print(f"[Recheck] Switching to: {original_name}")
-            switched = await controller.switch_proxy(selector, original_name)
-
-            if not switched:
-                 raise Exception("切换节点失败")
-
-            # 2. Wait
-            await asyncio.sleep(1)
-
-
-
-            # 3. Check
-            port = await controller.get_running_port()
-            proxy_url = f"http://127.0.0.1:{port}"
-
-            # 3. Check IP through Clash proxy
-            result = await state.checker.check_sources(
-                proxy_url,
-                mode="fast" if fast_mode else "browser",
-                source=source,
-                fallback=fallback,
-                use_cache=False,
-            )
-
-            # 4. Update Node
-            node_data = node_from_result(
-                target_node["id"],
-                original_name,
-                target_node["proxy_config"],
-                result,
-                source,
-                display_base_name=display_base_name,
-            )
-
-            state.nodes[target_index] = node_data
-
-            # 5. Push Event manually to trigger UI update
-            event = {
-                "type": "update", # New event type for single update
-                "node": node_data
-            }
-            state.events.append(event)
-
-            return {"status": "success", "node": node_data}
-
-    except Exception as e:
-        print(f"[Recheck] Error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-    finally:
-        state.checker.clear_cache()
-        state.is_running = False
-
+        return await state.recheck_node(node_id, request.config)
+    except TaskBusyError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    except NodeNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
 
 
 @router.post("/export")

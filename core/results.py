@@ -7,20 +7,69 @@ SOURCES = ("ping0", "ippure")
 SOURCE_LABELS = {"ping0": "Ping0", "ippure": "IPPure"}
 
 
+def score_emoji(percentage_str):
+    try:
+        value = float(percentage_str.replace('%', ''))
+        for threshold, emoji in ((10, '⚪'), (30, '🟢'), (50, '🟡'), (70, '🟠'), (90, '🔴')):
+            if value <= threshold:
+                return emoji
+        return '⚫'
+    except Exception:
+        return '❓'
+
+
+def shared_emoji(shared_str):
+    try:
+        nums = re.findall(r'\d+', shared_str or '')
+        if not nums:
+            return '❓'
+        upper = int(nums[-1]) + (1 if '+' in shared_str else 0)
+        for threshold, emoji in ((10, '🟢'), (100, '🟡'), (1000, '🟠'), (10000, '🔴')):
+            if upper <= threshold:
+                return emoji
+        return '⚫'
+    except Exception:
+        return '❓'
+
+
+def build_source_payload(source, mode='fast', values=None, error=None, full_string='', formatted=False):
+    if mode == 'browser':
+        result = {'pure_emoji': '❓', 'bot_emoji': '❓', 'ip_attr': '❓', 'ip_src': '❓',
+                  'pure_score': '❓', 'bot_score': '❓', 'full_string': '', 'ip': '❓',
+                  'error': None, 'source': source}
+    else:
+        result = {'ip': '❓', 'ip_attr': '❓', 'ip_src': '❓', 'pure_score': '❓',
+                  'shared_users': 'N/A', 'pure_emoji': '❓', 'shared_emoji': '❓',
+                  'full_string': '', 'error': None, 'source': source}
+    result.update(values or {})
+    if formatted:
+        result['pure_emoji'] = score_emoji(result['pure_score'])
+        if mode == 'browser':
+            result['bot_emoji'] = score_emoji(result['bot_score'])
+            extra = result['bot_emoji']
+        elif source == 'ping0':
+            result['shared_emoji'] = shared_emoji(result['shared_users'])
+            extra = result['shared_emoji']
+        else:
+            result['shared_emoji'] = ''
+            extra = ''
+        attr = result['ip_attr'] if result['ip_attr'] != '❓' else ''
+        origin = result['ip_src'] if result['ip_src'] != '❓' else ''
+        info = f'{attr}|{origin}'.strip()
+        if info == '|' or not info:
+            info = '未知'
+        result['full_string'] = f"【{result['pure_emoji']}{extra} {info}】"
+    if error is not None or full_string:
+        result['error'] = error
+        result['full_string'] = full_string
+    return result
+
+
 def _empty_source_result(source, status="not_requested", error=None):
-    return {
-        "source": source,
-        "status": status,
-        "ip": "❓",
-        "pure_score": "❓",
-        "pure_emoji": "❓",
-        "shared_users": "N/A",
-        "shared_emoji": "❓",
-        "ip_attr": "❓",
-        "ip_src": "❓",
-        "full_string": "",
-        "error": error,
-    }
+    result = build_source_payload(source)
+    result["status"] = status
+    result["error"] = error
+    return result
 
 
 def not_requested(source):

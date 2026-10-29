@@ -13,6 +13,8 @@ An intelligent automation tool for **Clash Verge** (and compatible cores). It te
 
 ## ✨ Features
 
+For Web input, the YAML top level must be a mapping with a non-empty `proxies` list. Each proxy must have a non-empty `name`.
+
 - **Dual-Source Checks (Default)**: Queries Ping0 and IPPure, then displays `Ping0 risk` and `IPPure score` separately. One provider failing does not discard the other provider's result.
 - **⚡ Fast Mode (New!)**: Enabled by default and uses direct API checks for faster runs. Change it in the Web interface, or set `fast_mode: false` in `config.yaml` for the CLI.
 - **Auto-Switching**: Automatically cycles through your Clash proxies.

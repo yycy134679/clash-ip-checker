@@ -90,6 +90,9 @@ Web可视化配置检测：
     - 运行 `python clash_automator.py`。
 
 ## Web 界面使用方法 (新版推荐)
+
+Web 输入的 YAML 顶层需要是映射；`proxies` 必须包含至少一个节点，每个节点都需要非空的 `name`。
+
 1. 打开你的 Clash 客户端 (例如 Clash Verge) 将当前clash正在运行的订阅配置文件切换为你想要测试的订阅，点击获取YAML源代码，然后复制粘贴进[web界面](http://127.0.0.1:8080)的yaml框中
     ![alt text](assets/clash-open-yaml-code.png)
 2. 确保Clash中 External Controller (外部控制) 已在设置中开启，密码随便设置, 然后再Web界面中配置

@@ -1,4 +1,5 @@
 from .base import BaseCheckSource
+from ..results import build_source_payload
 from playwright.async_api import async_playwright
 import re
 import asyncio
@@ -42,10 +43,7 @@ class BrowserSource(BaseCheckSource):
             
         context = await self.browser.new_context(**context_args)
         
-        result = {
-            "pure_emoji": "❓", "bot_emoji": "❓", "ip_attr": "❓", "ip_src": "❓",
-            "pure_score": "❓", "bot_score": "❓", "full_string": "", "ip": "❓", "error": None, "source": "ippure"
-        }
+        result = build_source_payload("ippure", mode="browser")
 
         page = None
         try:
@@ -66,7 +64,6 @@ class BrowserSource(BaseCheckSource):
             score_match = re.search(r"IPPure系数.*?(\d+%)", text, re.DOTALL)
             if score_match:
                 result["pure_score"] = score_match.group(1)
-                result["pure_emoji"] = self.get_emoji(result["pure_score"])
 
             # 2. Bot Ratio
             bot_match = re.search(r"bot\s*(\d+(\.\d+)?)%", text, re.IGNORECASE)
@@ -74,7 +71,6 @@ class BrowserSource(BaseCheckSource):
                 val = bot_match.group(0).replace('bot', '').strip()
                 if not val.endswith('%'): val += "%"
                 result["bot_score"] = val
-                result["bot_emoji"] = self.get_emoji(val)
 
             # 3. Attributes
             attr_match = re.search(r"IP属性\s*\n\s*(.+)", text)
@@ -95,13 +91,7 @@ class BrowserSource(BaseCheckSource):
                 ip_match = re.search(r"\b(?:\d{1,3}\.){3}\d{1,3}\b", text)
                 if ip_match: result["ip"] = ip_match.group(0)
 
-            # String
-            attr = result["ip_attr"] if result["ip_attr"] != "❓" else ""
-            src = result["ip_src"] if result["ip_src"] != "❓" else ""
-            info = f"{attr}|{src}".strip()
-            if info == "|" or not info: info = "未知"
-            
-            result["full_string"] = f"【{result['pure_emoji']}{result['bot_emoji']} {info}】"
+            result = build_source_payload("ippure", mode="browser", values=result, formatted=True)
 
         except asyncio.CancelledError:
             raise

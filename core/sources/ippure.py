@@ -1,4 +1,5 @@
 from .base import BaseCheckSource
+from ..results import build_source_payload
 from curl_cffi.requests import AsyncSession
 from typing import Dict, Optional
 
@@ -6,11 +7,7 @@ class IPPureSource(BaseCheckSource):
 
     async def check(self, proxy: Optional[str] = None) -> Dict:
         url = "https://my.123169.xyz/v1/info"
-        result = {
-            "pure_emoji": "❓", "shared_emoji": "❓", "ip_attr": "❓", "ip_src": "❓",
-            "pure_score": "❓", "shared_users": "N/A", "full_string": "", "ip": "❓",
-            "error": None, "source": "ippure"
-        }
+        result = build_source_payload("ippure")
         try:
             proxies = {"http": proxy, "https": proxy} if proxy else None
             # The checker enforces the 5-second dual-source limit; keep the
@@ -25,7 +22,6 @@ class IPPureSource(BaseCheckSource):
                     f_score = data.get("fraudScore")
                     if f_score is not None:
                         result["pure_score"] = f"{f_score}%"
-                        result["pure_emoji"] = self.get_emoji(result["pure_score"])
                     
                     is_resi = data.get("isResidential", False)
                     result["ip_attr"] = "住宅" if is_resi else "机房"
@@ -33,13 +29,7 @@ class IPPureSource(BaseCheckSource):
                     is_broad = data.get("isBroadcast", False)
                     result["ip_src"] = "广播" if is_broad else "原生"
                     
-                    result["shared_emoji"] = ""
-                    
-                    attr = result["ip_attr"] if result["ip_attr"] != "❓" else ""
-                    src = result["ip_src"] if result["ip_src"] != "❓" else ""
-                    info = f"{attr}|{src}".strip()
-                    if info == "|" or not info: info = "未知"
-                    result["full_string"] = f"【{result['pure_emoji']} {info}】"
+                    result = build_source_payload("ippure", values=result, formatted=True)
                 else:
                     result["error"] = f"API Error {resp.status_code}"
                     result["full_string"] = "【❌ API Error】"
