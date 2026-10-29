@@ -178,21 +178,23 @@ class WorkflowTests(unittest.IsolatedAsyncioTestCase):
 
     async def asyncSetUp(self):
         self.state = AppState()
-        self.state.is_running = True
-        self.state.nodes = [{"id": 0, "name": "测试节点", "original_name": "测试节点"}]
+        self.state.nodes = [{"id": 0, "name": "测试节点", "original_name": "测试节点", "proxy_config": {"name": "测试节点"}}]
         self.state.checker.check_sources = AsyncMock(return_value=dual_result())
         self.controller_mock = self.controller()
         self.controller_mock.get_running_port = AsyncMock(return_value=7897)
         self.state_patch = patch.object(api, "state", self.state)
-        self.controller_patch = patch.object(api, "ClashController", return_value=self.controller_mock)
+        self.state.controller_factory = lambda *args: self.controller_mock
+        self.state.sleep = AsyncMock()
         self.state_patch.start()
-        self.controller_patch.start()
         self.addCleanup(self.state_patch.stop)
-        self.addCleanup(self.controller_patch.stop)
+
+    async def run_batch(self, proxies, config):
+        self.state.start_batch({"proxies": proxies}, config)
+        await self.state.task
 
     async def test_batch_restores_and_records_valid_result(self):
         with patch.object(api.asyncio, "sleep", new=AsyncMock()):
-            await api._run_check([{"name": "测试节点"}], {"source": "both"})
+            await self.run_batch([{"name": "测试节点"}], {"source": "both"})
         self.assertFalse(self.state.is_running)
         self.assertEqual(self.state.nodes[0]["status"], "✅")
         self.assertEqual(
@@ -214,7 +216,7 @@ class WorkflowTests(unittest.IsolatedAsyncioTestCase):
             ippure_ip="198.51.100.2",
         )
         with patch.object(api.asyncio, "sleep", new=AsyncMock()):
-            await api._run_check([{"name": "测试节点"}], {"source": "both"})
+            await self.run_batch([{"name": "测试节点"}], {"source": "both"})
 
         node = self.state.nodes[0]
         self.assertEqual(node["check_status"], "ip_mismatch")
@@ -226,17 +228,18 @@ class WorkflowTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_batch_passes_old_single_source_config(self):
         with patch.object(api.asyncio, "sleep", new=AsyncMock()):
-            await api._run_check(
+            await self.run_batch(
                 [{"name": "测试节点"}],
                 {"source": "ping0", "fallback": False},
             )
 
         self.assertEqual(
             self.state.checker.check_sources.await_args.kwargs,
-            {"mode": "fast", "source": "ping0", "fallback": False},
+            {"proxy": "http://127.0.0.1:7897", "mode": "fast", "source": "ping0", "fallback": False},
         )
 
     async def test_stop_keeps_busy_until_cleanup_and_blocks_new_task(self):
+        self.state.start_batch({"proxies": [{"name": "测试节点"}]}, {})
         response = await api.stop_check()
         self.assertEqual(response["status"], "stopping")
         self.assertTrue(self.state.is_running)
@@ -244,12 +247,11 @@ class WorkflowTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(api.HTTPException) as error:
             await api.recheck_node(0, RecheckRequest())
         self.assertEqual(error.exception.status_code, 409)
-        await api._run_check([{"name": "测试节点"}], {})
+        await self.state.task
         self.state.checker.check_sources.assert_not_awaited()
         self.assertFalse(self.state.is_running)
 
     async def test_recheck_restores_after_check_exception(self):
-        self.state.is_running = False
         self.state.checker.check_sources.side_effect = ValueError("接口不可用")
         with patch.object(api.asyncio, "sleep", new=AsyncMock()):
             with self.assertRaises(api.HTTPException):
@@ -261,7 +263,7 @@ class WorkflowTests(unittest.IsolatedAsyncioTestCase):
     async def test_query_failure_is_not_marked_as_success(self):
         self.state.checker.check_sources.return_value = failure_aggregate("both", "All sources failed")
         with patch.object(api.asyncio, "sleep", new=AsyncMock()):
-            await api._run_check([{"name": "测试节点"}], {})
+            await self.run_batch([{"name": "测试节点"}], {})
         self.assertEqual(self.state.nodes[0]["status"], "❌ 失败")
 
     async def test_stop_during_check_waits_until_restore_finishes(self):
@@ -275,7 +277,7 @@ class WorkflowTests(unittest.IsolatedAsyncioTestCase):
 
         self.state.checker.check_sources.side_effect = check
         with patch.object(api.asyncio, "sleep", new=AsyncMock()):
-            task = asyncio.create_task(api._run_check([{"name": "测试节点"}], {}))
+            task = asyncio.create_task(self.run_batch([{"name": "测试节点"}], {}))
             await asyncio.wait_for(entered.wait(), 1)
             await api.stop_check()
             self.assertTrue(self.state.is_running)
@@ -287,14 +289,14 @@ class WorkflowTests(unittest.IsolatedAsyncioTestCase):
     async def test_restore_failure_reaches_user_before_completion(self):
         self.controller_mock.switch_proxy.side_effect = [True, False]
         with patch.object(api.asyncio, "sleep", new=AsyncMock()):
-            await api._run_check([{"name": "测试节点"}], {})
+            await self.run_batch([{"name": "测试节点"}], {})
         self.assertIn("手动恢复", self.state.events[-2]["error"])
         self.assertEqual(self.state.events[-1]["type"], "complete")
         self.assertFalse(self.state.is_running)
 
     async def test_recheck_bypasses_cache_and_replaces_old_suffix(self):
         with patch.object(api.asyncio, "sleep", new=AsyncMock()):
-            await api._run_check([{"name": "测试节点"}], {"source": "both"})
+            await self.run_batch([{"name": "测试节点"}], {"source": "both"})
 
         old_name = self.state.nodes[0]["name"]
         await api.update_node(0, UpdateNodeRequest(name=f"手动节点{old_name[len('测试节点'):]}"))
@@ -318,7 +320,6 @@ class WorkflowTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("source_results", self.state.events[-1]["node"])
 
     async def test_export_updates_proxy_group_references(self):
-        self.state.is_running = False
         self.state.original_yaml = {
             "proxies": [{"name": "测试节点", "type": "ss", "server": "example.com"}],
             "proxy-groups": [{"name": "Proxy", "proxies": ["测试节点", "DIRECT"]}],

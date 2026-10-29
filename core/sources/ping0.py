@@ -1,4 +1,5 @@
 from .base import BaseCheckSource
+from ..results import build_source_payload, shared_emoji
 from curl_cffi.requests import AsyncSession
 import re
 from typing import Dict, Optional
@@ -7,29 +8,11 @@ class Ping0Source(BaseCheckSource):
 
 
     def get_shared_emoji(self, shared_str):
-        if not shared_str or shared_str == "N/A":
-            return "❓"
-        try:
-            nums = re.findall(r'\d+', shared_str)
-            if not nums: return "❓"
-            upper = int(nums[-1]) if len(nums) > 1 else int(nums[0])
-            if "+" in shared_str: upper += 1
-            if upper <= 10: return "🟢"
-            if upper <= 100: return "🟡"
-            if upper <= 1000: return "🟠"
-            if upper <= 10000: return "🔴"
-            return "⚫"
-        except Exception:
-            return "❓"
+        return shared_emoji(shared_str)
 
     @staticmethod
     def _result(source_error=None, full_string=""):
-        return {
-            "ip": "❓", "ip_attr": "❓", "ip_src": "❓",
-            "pure_score": "❓", "shared_users": "N/A",
-            "pure_emoji": "❓", "shared_emoji": "❓",
-            "full_string": full_string, "error": source_error, "source": "ping0"
-        }
+        return build_source_payload("ping0", error=source_error, full_string=full_string)
 
     async def check(self, proxy: Optional[str] = None) -> Dict:
         url = "https://ping0.cc/"
@@ -76,7 +59,6 @@ class Ping0Source(BaseCheckSource):
                 score_match = re.search(r'class="riskitem riskcurrent"[^>]*><span class="value">(\d+)%</span>', html)
                 if score_match:
                     result["pure_score"] = f"{score_match.group(1)}%"
-                    result["pure_emoji"] = self.get_emoji(result["pure_score"])
                 
                 # 4. Native
                 native_match = re.search(r'<div class="line line-nativeip">.*?<span class="label[^>]*>(.*?)</span>', html, re.DOTALL)
@@ -92,18 +74,9 @@ class Ping0Source(BaseCheckSource):
                     shared_match = re.search(r'class="usecountbar"[^>]*>\s*(.*?)\s*</div>', html, re.DOTALL)
                 if shared_match:
                     result["shared_users"] = shared_match.group(1).strip()
-                    result["shared_emoji"] = self.get_shared_emoji(result["shared_users"])
                 
-                # Finish
-                attr = result["ip_attr"] if result["ip_attr"] != "❓" else ""
-                src = result["ip_src"] if result["ip_src"] != "❓" else ""
-                info = f"{attr}|{src}".strip()
-                if info == "|" or not info: info = "未知"
-                
-                result["full_string"] = f"【{result['pure_emoji']}{result['shared_emoji']} {info}】"
-                
-                return result
-                
+                return build_source_payload("ping0", values=result, formatted=True)
+
         except Exception as e:
             print(f"     [Ping0] Error: {e}")
             return self._result(str(e), "【❌ Error】")

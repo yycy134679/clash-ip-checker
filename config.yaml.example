@@ -1,7 +1,7 @@
 #-------------------核心配置-----------------
 # 极速模式 (True/False)
 # True: 使用 API 直接检测，速度快但不包含 Bot 比例
-# False: 使用浏览器模拟检测，包含 Bot 比例，速度较慢
+# False: IPPure 使用浏览器检测并提供 Bot 比例；Ping0 仍使用 API
 fast_mode: True
 
 # 你的 Clash 配置文件绝对路径 例如 'C:\Users\YourName\AppData\Roaming\clash\config.yaml'
@@ -18,12 +18,12 @@ clash_api_secret: ""
 
 # 检测源 (both、ping0 或 ippure), 默认 both
 # both: 同时检测 Ping0 和 IPPure，分别显示两家结果
-# ping0 / ippure: 只检测指定主源，可按下面的 fallback 降级
+# ping0 / ippure: 检测指定主源；降级限制见下方说明
 source: "both"
 
 # 是否允许降级 (True/False), 默认 True
-# 仅 source 为 ping0 或 ippure 时生效
-# True: 主源失败时尝试另一家
+# 单源极速检测：True 表示主源失败时尝试另一家；整体限时 3 秒
+# IPPure 单源浏览器检测失败或超时后，True 表示用 Ping0 极速检测作为备用，另限时 3 秒
 fallback: true
 
 

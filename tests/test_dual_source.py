@@ -91,6 +91,68 @@ class DualSourceTests(unittest.IsolatedAsyncioTestCase):
         checker.browser_source.check.assert_awaited_once()
         checker.ippure.check.assert_not_awaited()
 
+    async def test_single_ippure_browser_uses_selected_proxy(self):
+        checker = self.make_checker()
+        checker.browser_source.check = AsyncMock(return_value=ippure_payload())
+        proxy = "http://127.0.0.1:7890"
+
+        result = await checker.check_sources(proxy, mode="browser", source="ippure")
+
+        checker.get_simple_ip.assert_awaited_once_with(proxy)
+        checker.browser_source.check.assert_awaited_once_with(proxy)
+        checker.ping0.check.assert_not_awaited()
+        self.assertEqual(result["source"], "ippure")
+        self.assertEqual(result["check_status"], "success")
+
+    async def test_single_ippure_browser_failure_uses_ping0_when_enabled(self):
+        for failure in (ippure_payload(score="❓"), RuntimeError("browser failed")):
+            with self.subTest(failure=failure):
+                checker = self.make_checker()
+                checker.browser_source.check = AsyncMock()
+                if isinstance(failure, Exception):
+                    checker.browser_source.check.side_effect = failure
+                else:
+                    checker.browser_source.check.return_value = failure
+                proxy = "http://127.0.0.1:7890"
+
+                result = await checker.check_sources(
+                    proxy, mode="browser", source="ippure", fallback=True, use_cache=False
+                )
+
+                checker.ping0.check.assert_awaited_once_with(proxy)
+                self.assertEqual(result["source"], "ping0")
+                self.assertEqual(result["source_results"]["ippure"]["status"], "failed")
+                self.assertEqual(result["source_results"]["ping0"]["status"], "success")
+
+    async def test_single_ippure_browser_timeout_uses_ping0(self):
+        checker = self.make_checker()
+        checker.check_browser = AsyncMock(return_value=checker._timeout_result())
+
+        result = await checker.check_sources(mode="browser", source="ippure")
+
+        checker.ping0.check.assert_awaited_once()
+        self.assertEqual(result["source"], "ping0")
+
+    async def test_single_ippure_browser_failure_without_fallback(self):
+        checker = self.make_checker()
+        checker.browser_source.check = AsyncMock(return_value=ippure_payload(score="❓"))
+
+        result = await checker.check_sources(mode="browser", source="ippure", fallback=False)
+
+        checker.ping0.check.assert_not_awaited()
+        self.assertEqual(result["check_status"], "failed")
+        self.assertEqual(result["source_results"]["ippure"]["error"], "未获取到评分")
+
+    async def test_single_ippure_browser_preserves_failure_if_backup_fails(self):
+        checker = self.make_checker()
+        checker.browser_source.check = AsyncMock(side_effect=RuntimeError("browser failed"))
+        checker.ping0.check.side_effect = RuntimeError("ping0 failed")
+
+        result = await checker.check_sources(mode="browser", source="ippure")
+
+        self.assertEqual(result["check_status"], "failed")
+        self.assertIn("browser failed", result["error"])
+
     async def test_one_source_failure_keeps_the_other_result(self):
         for failing_source in ("ping0", "ippure"):
             with self.subTest(source=failing_source):

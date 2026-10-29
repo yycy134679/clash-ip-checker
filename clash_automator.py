@@ -9,6 +9,7 @@ from utils.config_loader import load_config
 from core.ip_checker import IPChecker
 from core.clash_api import ClashController
 from core.results import failure_aggregate
+from core.node_check import NodeCheckRunner, NodeSwitchError
 
 # --- CONFIGURATION ---
 cfg = load_config("config.yaml") or {}
@@ -55,27 +56,16 @@ async def test_single_proxy(controller: ClashController, checker: IPChecker, pro
     """
     print(f"\nTesting: {proxy_name}")
 
-    # ... switch logic same ...
-
-    # 1. Switch Node
     print(f"  -> Switching {selector} ...")
-    switched = await controller.switch_proxy(selector, proxy_name)
-    if not switched:
+    runner = NodeCheckRunner(controller, checker, selector, local_proxy,
+                             mode="fast" if fast_mode else "browser",
+                             source=source, fallback=fallback, sleep=asyncio.sleep,
+                             on_check=lambda: print(f"  -> Running IP Check ({'Fast Mode' if fast_mode else 'Browser Mode'})..."))
+    try:
+        res = await runner.check(proxy_name)
+    except NodeSwitchError:
         print("  -> Switch failed, skipping IP check.")
         return failure_aggregate(source, "切换节点失败", name_suffix="【❌ Switch Error】")
-
-    # 2. Wait for switch to take effect
-    await asyncio.sleep(1)
-
-    # 3. Check IP
-    print(f"  -> Running IP Check ({'Fast Mode' if fast_mode else 'Browser Mode'})...")
-    try:
-        res = await checker.check_sources(
-            proxy=local_proxy,
-            mode="fast" if fast_mode else "browser",
-            source=source,
-            fallback=fallback,
-        )
     except Exception as e:
         print(f"     Check error: {e}")
         res = failure_aggregate(source, str(e))
